@@ -1,0 +1,7 @@
+{
+  "name": "Meeting Intelligence Extractor",
+  "description": "Automated extraction of structured entities (Summary, Decisions, Tech Stack) from meeting audio or transcripts using Gemini 2.5 Flash.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
