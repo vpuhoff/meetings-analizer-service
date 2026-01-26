@@ -13,6 +13,7 @@ const App: React.FC = () => {
   const [status, setStatus] = useState<ProcessingStatus>('idle');
   const [result, setResult] = useState<MeetingAnalysis | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [processingStep, setProcessingStep] = useState<number>(0);
   
   // Settings
   const [language, setLanguage] = useState<string>('English');
@@ -20,7 +21,7 @@ const App: React.FC = () => {
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
   const [showProjectManager, setShowProjectManager] = useState(false);
   
-  const [currentFile, setCurrentFile] = useState<File | null>(null);
+  const [currentFiles, setCurrentFiles] = useState<File[]>([]);
 
   // Load projects on mount
   useEffect(() => {
@@ -58,10 +59,11 @@ const App: React.FC = () => {
     });
   };
 
-  const handleFileSelect = async (file: File) => {
+  const handleFilesSelect = async (files: File[]) => {
     setStatus('processing');
+    setProcessingStep(0);
     setErrorMsg(null);
-    setCurrentFile(file);
+    setCurrentFiles(files);
     
     try {
       // Find selected project context
@@ -69,7 +71,14 @@ const App: React.FC = () => {
       const context = project ? project.context : undefined;
       const team = project ? project.team : undefined;
 
-      const data = await analyzeMeeting(file, language, context, team);
+      const data = await analyzeMeeting(
+        files, 
+        language, 
+        context, 
+        team, 
+        undefined, 
+        (step) => setProcessingStep(step)
+      );
       setResult(data);
       setStatus('completed');
     } catch (err: any) {
@@ -80,9 +89,10 @@ const App: React.FC = () => {
   };
 
   const handleReanalyze = async (feedback: string) => {
-    if (!currentFile) return;
+    if (currentFiles.length === 0) return;
 
     setStatus('processing');
+    setProcessingStep(0);
     setErrorMsg(null);
 
     try {
@@ -90,7 +100,14 @@ const App: React.FC = () => {
         const context = project ? project.context : undefined;
         const team = project ? project.team : undefined;
 
-        const data = await analyzeMeeting(currentFile, language, context, team, feedback);
+        const data = await analyzeMeeting(
+            currentFiles, 
+            language, 
+            context, 
+            team, 
+            feedback,
+            (step) => setProcessingStep(step)
+        );
         setResult(data);
         setStatus('completed');
     } catch (err: any) {
@@ -101,18 +118,19 @@ const App: React.FC = () => {
   };
 
   const handleAskQuestion = async (question: string): Promise<string> => {
-      if (!currentFile) return "No file loaded.";
+      if (currentFiles.length === 0) return "No files loaded.";
       const project = projects.find(p => p.id === selectedProjectId);
       const context = project ? project.context : undefined;
       const team = project ? project.team : undefined;
-      return await askMeetingQuestion(currentFile, question, context, team);
+      return await askMeetingQuestion(currentFiles, question, context, team);
   };
 
   const handleReset = () => {
     setStatus('idle');
     setResult(null);
     setErrorMsg(null);
-    setCurrentFile(null);
+    setCurrentFiles([]);
+    setProcessingStep(0);
   };
 
   return (
@@ -216,12 +234,12 @@ const App: React.FC = () => {
                   onClose={() => setShowProjectManager(false)}
               />
 
-              <Dropzone onFileSelect={handleFileSelect} />
+              <Dropzone onFilesSelect={handleFilesSelect} />
               
               <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
                  <div className="p-4 bg-white rounded-lg shadow-sm border border-slate-100">
                     <div className="text-brand-600 font-bold text-lg mb-1">Upload</div>
-                    <p className="text-sm text-slate-500">Drag & drop your meeting audio file</p>
+                    <p className="text-sm text-slate-500">Multiple audio files supported</p>
                  </div>
                  <div className="p-4 bg-white rounded-lg shadow-sm border border-slate-100">
                     <div className="text-brand-600 font-bold text-lg mb-1">Extract</div>
@@ -238,7 +256,7 @@ const App: React.FC = () => {
 
         {status === 'processing' && (
           <div className="mt-10">
-            <ProcessingView />
+            <ProcessingView currentStep={processingStep} />
           </div>
         )}
 
@@ -263,7 +281,7 @@ const App: React.FC = () => {
             </div>
             <h3 className="text-lg leading-6 font-medium text-slate-900">Processing Failed</h3>
             <p className="mt-2 text-sm text-slate-500">
-              {errorMsg || "We couldn't process this file. Please check your API key or file format."}
+              {errorMsg || "We couldn't process these files. Please check your API key or file format."}
             </p>
             <div className="mt-6">
               <button

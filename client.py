@@ -8,33 +8,47 @@ class MeetingClient:
     def __init__(self, base_url="http://localhost:3000"):
         self.base_url = base_url.rstrip('/')
 
-    def process_meeting(self, file_path, language="English", project_context=None, team_context=None):
+    def process_meeting(self, file_paths, language="English", project_context=None, team_context=None):
         """
-        Uploads a file and polls for the result.
+        Uploads one or multiple files and polls for the result.
         """
-        if not os.path.exists(file_path):
-            raise FileNotFoundError(f"File not found: {file_path}")
+        files_payload = []
+        open_files = []
 
-        print(f"[*] Uploading file: {file_path}")
-        
-        # Prepare multipart upload
-        with open(file_path, 'rb') as f:
-            files = {'file': f}
-            data = {'language': language}
-            if project_context:
-                data['context'] = project_context
-            if team_context:
-                data['team'] = team_context
+        # Validate paths and open files
+        for path in file_paths:
+            if not os.path.exists(path):
+                print(f"[-] File not found: {path}")
+                continue
+            f = open(path, 'rb')
+            open_files.append(f)
+            files_payload.append(('files', (os.path.basename(path), f, 'application/octet-stream')))
+            print(f"[*] Preparing file: {path}")
 
-            try:
-                response = requests.post(f"{self.base_url}/v1/process-meeting", files=files, data=data)
-                response.raise_for_status()
-                task_data = response.json()
-                task_id = task_data.get('task_id')
-                print(f"[+] File accepted. Task ID: {task_id}")
-            except requests.exceptions.RequestException as e:
-                print(f"[-] Error submitting task: {e}")
-                return None
+        if not files_payload:
+            print("[-] No valid files to upload.")
+            return None
+
+        data = {'language': language}
+        if project_context:
+            data['context'] = project_context
+        if team_context:
+            data['team'] = team_context
+
+        try:
+            print("[*] Uploading files...")
+            response = requests.post(f"{self.base_url}/v1/process-meeting", files=files_payload, data=data)
+            response.raise_for_status()
+            task_data = response.json()
+            task_id = task_data.get('task_id')
+            print(f"[+] Files accepted. Task ID: {task_id}")
+        except requests.exceptions.RequestException as e:
+            print(f"[-] Error submitting task: {e}")
+            return None
+        finally:
+            # Close all opened files
+            for f in open_files:
+                f.close()
 
         # Poll for results
         return self._wait_for_completion(task_id)
@@ -97,10 +111,11 @@ if __name__ == "__main__":
     
     # Check if file argument is provided
     if len(sys.argv) < 2:
-        print("Usage: python client.py <path_to_audio_file>")
+        print("Usage: python client.py <path_to_audio_file> [more_files...]")
         sys.exit(1)
 
-    FILE_PATH = sys.argv[1]
+    # Collect all arguments after the script name as file paths
+    FILE_PATHS = sys.argv[1:]
     LANGUAGE = "English"
     
     # Optional contexts
@@ -108,7 +123,7 @@ if __name__ == "__main__":
     TEAM_CTX = "Alice: Backend Lead\nBob: Frontend Dev\nCharlie: Product Manager"
 
     RESULT = CLIENT.process_meeting(
-        file_path=FILE_PATH,
+        file_paths=FILE_PATHS,
         language=LANGUAGE,
         project_context=PROJECT_CTX,
         team_context=TEAM_CTX

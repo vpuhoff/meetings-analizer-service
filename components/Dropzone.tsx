@@ -1,13 +1,14 @@
 import React, { useRef, useState } from 'react';
 
 interface DropzoneProps {
-  onFileSelect: (file: File) => void;
+  onFilesSelect: (files: File[]) => void;
   disabled?: boolean;
 }
 
-const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, disabled }) => {
+const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelect, disabled }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+  const [fileCount, setFileCount] = useState(0);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -25,36 +26,35 @@ const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, disabled }) => {
     if (disabled) return;
     
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      validateAndPass(e.dataTransfer.files[0]);
+      processFiles(e.dataTransfer.files);
     }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
-      validateAndPass(e.target.files[0]);
+      processFiles(e.target.files);
     }
   };
 
-  const validateAndPass = (file: File) => {
-    // Simple validation for audio types
-    const validTypes = ['audio/mpeg', 'audio/wav', 'audio/x-m4a', 'audio/mp4', 'audio/webm'];
-    // 20MB limit for demo stability (though API handles more)
-    const maxSize = 20 * 1024 * 1024; 
+  const processFiles = (fileList: FileList) => {
+     const files = Array.from(fileList);
+     const validTypes = ['audio/mpeg', 'audio/wav', 'audio/x-m4a', 'audio/mp4', 'audio/webm'];
+     const maxSize = 20 * 1024 * 1024; // 20MB limit for demo stability per file
 
-    if (!validTypes.some(type => file.type.includes(type) || file.type.includes('audio'))) {
-        // Fallback for generic audio check
-        if(!file.type.startsWith('audio/')) {
-             alert("Please upload a valid audio file.");
-             return;
-        }
-    }
+     const validFiles = files.filter(file => {
+        const isValidType = validTypes.some(type => file.type.includes(type) || file.type.includes('audio')) || file.type.startsWith('audio/');
+        const isValidSize = file.size <= maxSize;
+        return isValidType && isValidSize;
+     });
 
-    if (file.size > maxSize) {
-      alert("File is too large for this demo. Please use a file under 20MB.");
-      return;
-    }
+     if (validFiles.length !== files.length) {
+         alert(`Some files were skipped. Ensure they are valid audio files under 20MB.`);
+     }
 
-    onFileSelect(file);
+     if (validFiles.length > 0) {
+         setFileCount(validFiles.length);
+         onFilesSelect(validFiles);
+     }
   };
 
   return (
@@ -75,6 +75,7 @@ const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, disabled }) => {
         onChange={handleChange} 
         accept="audio/*" 
         className="hidden" 
+        multiple
         disabled={disabled}
       />
       
@@ -86,10 +87,10 @@ const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, disabled }) => {
         </div>
         <div>
           <p className="text-lg font-medium text-slate-700">
-            {isDragOver ? "Drop the audio file here" : "Click to upload or drag and drop"}
+            {isDragOver ? "Drop audio files here" : (fileCount > 0 ? `${fileCount} file(s) selected` : "Click to upload multiple audio files")}
           </p>
           <p className="text-sm text-slate-500 mt-1">
-            MP3, WAV, M4A (Max 20MB)
+            MP3, WAV, M4A (Max 20MB per file)
           </p>
         </div>
       </div>

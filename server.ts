@@ -18,7 +18,6 @@ if (!API_KEY) {
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 // In-memory storage for tasks
-// In a real production app, use Redis or a Database
 interface Task {
   id: string;
   status: 'processing' | 'completed' | 'failed';
@@ -34,27 +33,31 @@ const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
 app.use(cors() as unknown as express.RequestHandler);
-app.use(express.json({ limit: '10mb' }) as unknown as express.RequestHandler); // Increase limit for large analysis JSON
+app.use(express.json({ limit: '50mb' }) as unknown as express.RequestHandler); // Increased limit for large transcript payloads
 
-// Schema definition (Matching the frontend types)
-const analysisSchema: Schema = {
+// --- Schemas ---
+
+// 1. Schema for Transcription only
+const transcriptSchema: Schema = {
+  type: Type.ARRAY,
+  items: {
+    type: Type.OBJECT,
+    properties: {
+      speaker: { type: Type.STRING },
+      timestamp: { type: Type.STRING },
+      text: { type: Type.STRING },
+    },
+    required: ["speaker", "timestamp", "text"],
+  },
+};
+
+// 2. Schema for Intelligence only (No transcript)
+const intelligenceSchema: Schema = {
   type: Type.OBJECT,
   properties: {
     meetingType: {
       type: Type.STRING,
-      description: "The general type or category of the meeting (e.g., 'Daily Standup', 'Incident Post-mortem', 'Project Planning', 'Casual Sync')."
-    },
-    transcript: {
-      type: Type.ARRAY,
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          speaker: { type: Type.STRING },
-          timestamp: { type: Type.STRING },
-          text: { type: Type.STRING },
-        },
-        required: ["speaker", "timestamp", "text"],
-      },
+      description: "The general type or category of the meeting."
     },
     summary: { type: Type.STRING },
     topics: { type: Type.ARRAY, items: { type: Type.STRING } },
@@ -84,48 +87,38 @@ const analysisSchema: Schema = {
     projects: { type: Type.ARRAY, items: { type: Type.STRING } },
     blockers: { type: Type.ARRAY, items: { type: Type.STRING } },
   },
-  required: ["meetingType", "transcript", "summary", "topics", "decisions", "actionItems", "techDetails", "projects", "blockers"],
+  required: ["meetingType", "summary", "topics", "decisions", "actionItems", "techDetails", "projects", "blockers"],
 };
 
 // --- Endpoints ---
 
-/**
- * POST /v1/process-meeting
- * Accepts multipart/form-data with 'file' field.
- * Optional body fields: 'context' (project context), 'team' (team members).
- */
-app.post('/v1/process-meeting', upload.single('file') as unknown as express.RequestHandler, async (req: any, res: any) => {
+app.post('/v1/process-meeting', upload.array('files') as unknown as express.RequestHandler, async (req: any, res: any) => {
   try {
-    if (!req.file) {
-      res.status(400).json({ error: "No file provided." });
+    if (!req.files || req.files.length === 0) {
+      res.status(400).json({ error: "No files provided." });
       return;
     }
 
     const taskId = uuidv4();
-    const fileBuffer = req.file.buffer;
-    const mimeType = req.file.mimetype;
     
-    // Optional context from body
     const projectContext = req.body.context;
     const teamContext = req.body.team;
     const language = req.body.language || "English";
 
-    // Create task
     tasks.set(taskId, {
       id: taskId,
       status: 'processing',
       createdAt: Date.now()
     });
 
-    // Respond immediately (202 Accepted)
     res.status(202).json({ 
       task_id: taskId, 
       status: "accepted",
-      message: "File uploaded and processing started." 
+      message: `${req.files.length} file(s) uploaded and processing started.` 
     });
 
     // Start Background Processing
-    processMeetingInBackground(taskId, fileBuffer, mimeType, language, projectContext, teamContext);
+    processMeetingInBackground(taskId, req.files, language, projectContext, teamContext);
 
   } catch (error: any) {
     console.error("Upload error:", error);
@@ -133,10 +126,6 @@ app.post('/v1/process-meeting', upload.single('file') as unknown as express.Requ
   }
 });
 
-/**
- * GET /v1/results/:taskId
- * Returns the status and result of the analysis.
- */
 app.get('/v1/results/:taskId', (req: any, res: any) => {
   const taskId = req.params.taskId;
   const task = tasks.get(taskId);
@@ -155,11 +144,6 @@ app.get('/v1/results/:taskId', (req: any, res: any) => {
   }
 });
 
-/**
- * POST /v1/generate-report
- * Accepts JSON body with 'analysis' object and optional 'language'.
- * Returns markdown string.
- */
 app.post('/v1/generate-report', async (req: any, res: any) => {
   try {
     const { analysis, language = "English" } = req.body;
@@ -187,6 +171,11 @@ app.post('/v1/generate-report', async (req: any, res: any) => {
     ## Discussed Topics
     ## Appendix: Full Transcript (Format nicely with timestamps and speaker names)
 
+    Formatting Rules:
+    - Do not add extra blank lines between rows in tables.
+    - Ensure tables are compact.
+    - Use clear headers and lists.
+
     Data:
     ${JSON.stringify(analysis, null, 2)}
     `;
@@ -212,80 +201,115 @@ app.post('/v1/generate-report', async (req: any, res: any) => {
 
 async function processMeetingInBackground(
   taskId: string, 
-  buffer: Buffer, 
-  mimeType: string, 
+  files: { mimetype: string; buffer: Buffer }[], 
   language: string,
   projectContext?: string,
   teamContext?: string
 ) {
   try {
-    const base64Data = buffer.toString('base64');
     const model = "gemini-flash-latest";
 
+    // PHASE 1: Transcribe each file individually (Parallel)
+    // This avoids output token limits for massive transcripts
+    console.log(`[Task ${taskId}] Starting transcription phase...`);
+    
+    const transcriptionPromises = files.map(async (file, index) => {
+      const base64Data = file.buffer.toString('base64');
+      
+      const prompt = `
+      Transcribe this audio segment.
+      - Identify speakers (Speaker A, B, etc.).
+      - Provide timestamps.
+      - Output strictly as a JSON array of objects: [{ "speaker": "...", "timestamp": "...", "text": "..." }]
+      `;
+
+      const response = await ai.models.generateContent({
+        model: model,
+        contents: {
+          parts: [
+            { inlineData: { mimeType: file.mimetype, data: base64Data } },
+            { text: prompt }
+          ]
+        },
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: transcriptSchema,
+          temperature: 0,
+        }
+      });
+      
+      const text = response.text;
+      if (!text) return [];
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        console.warn(`Failed to parse transcript for file ${index}`, e);
+        return [];
+      }
+    });
+
+    const transcriptsParts = await Promise.all(transcriptionPromises);
+    // Flatten the array of arrays
+    const fullTranscript = transcriptsParts.flat();
+
+    console.log(`[Task ${taskId}] Transcription complete. ${fullTranscript.length} segments. Starting analysis...`);
+
+    // PHASE 2: Analyze the full transcript
+    // Convert transcript object to a string format to save tokens and provide context
+    const transcriptText = fullTranscript.map((t: any) => `[${t.timestamp}] ${t.speaker}: ${t.text}`).join('\n');
+
     let systemPrompt = `
-    You are a Systems Analyst. Your task is to process the meeting audio and extract structured intelligence.
+    You are a Systems Analyst. Your task is to analyze the following meeting transcript and extract structured intelligence.
     
-    1. **Meeting Type**: Classify the general category of the meeting (e.g., Daily Standup, Incident Review, Client Sync, Planning).
-    2. **Transcript**: Generate a detailed transcript. 
-       - **Diarization**: Identify speakers (e.g., 'Speaker A', 'Speaker B', or real names if introduced). 
-       - **Timestamps**: Provide an estimated timestamp (MM:SS) for the start of each segment.
-    3. **Tech Details**: If a database, API method, library, or specific architecture is mentioned, extract it here.
-    4. **Action Items**: Extract all tasks, assignments, and **implicit requests**.
-       - Capture direct commitments ("I will do...").
-       - Capture polite requests or soft instructions (e.g., "Please recall...", "We need to gather...", "Make sure to...").
-       - Capture future planning tasks ("Let's assemble the next release...").
-       - If a specific person is not named, assign it to 'Team' or 'Unknown'.
-    5. **Decisions**: Explicitly agreed upon points.
-    6. **Blockers**: Any raised concerns, risks, or impediments.
+    1. **Meeting Type**: Classify the general category.
+    2. **Tech Details**: Extract databases, APIs, libraries, architectures.
+    3. **Action Items**: Extract tasks, assignments, and implicit requests. Assign to 'Unknown' if not specified.
+    4. **Decisions**: Explicitly agreed upon points.
+    5. **Blockers**: Concerns, risks, impediments.
     
-    IMPORTANT: All text content in the JSON response (summary, transcript text, topics, decisions, etc.) MUST be written in ${language}.
-    
-    Ensure the output is strictly valid JSON matching the schema.
+    IMPORTANT: All text content in the JSON response MUST be written in ${language}.
     `;
 
     if (projectContext) {
-      systemPrompt += `\n\nPROJECT CONTEXT & TERMINOLOGY:\n${projectContext}\n`;
+      systemPrompt += `\n\nPROJECT CONTEXT:\n${projectContext}\n`;
     }
 
     if (teamContext) {
-      systemPrompt += `\n\nTEAM MEMBERS & ROLES:\n${teamContext}\n`;
+      systemPrompt += `\n\nTEAM MEMBERS:\n${teamContext}\n`;
     }
 
-    const userPrompt = `Analyze this meeting audio and output the results in ${language}.`;
+    const userPrompt = `Analyze this transcript:\n\n${transcriptText}`;
 
-    const response = await ai.models.generateContent({
+    const analysisResponse = await ai.models.generateContent({
       model: model,
       contents: {
-        parts: [
-          {
-            inlineData: {
-              mimeType: mimeType,
-              data: base64Data,
-            },
-          },
-          {
-            text: userPrompt,
-          },
-        ],
+        parts: [{ text: userPrompt }]
       },
       config: {
         systemInstruction: systemPrompt,
         temperature: 0,
         responseMimeType: "application/json",
-        responseSchema: analysisSchema,
+        responseSchema: intelligenceSchema, // Using schema WITHOUT transcript
       },
     });
 
-    const text = response.text;
-    if (!text) throw new Error("No response from AI model");
+    const analysisText = analysisResponse.text;
+    if (!analysisText) throw new Error("No response from AI model during analysis");
 
-    const result = JSON.parse(text);
+    const analysisResult = JSON.parse(analysisText);
 
-    // Update task status
+    // MERGE: Combine Intelligence + Full Transcript
+    const finalResult = {
+      ...analysisResult,
+      transcript: fullTranscript
+    };
+
+    console.log(`[Task ${taskId}] Analysis complete.`);
+
     const task = tasks.get(taskId);
     if (task) {
       task.status = 'completed';
-      task.result = result;
+      task.result = finalResult;
       tasks.set(taskId, task);
     }
 

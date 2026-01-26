@@ -1,23 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 
-const ProcessingView: React.FC = () => {
-  const [step, setStep] = useState(0);
+interface ProcessingViewProps {
+  currentStep: number;
+}
+
+const ProcessingView: React.FC<ProcessingViewProps> = ({ currentStep }) => {
   
-  // Simulate the stages mentioned in the TZ: Diarization -> Transcription -> Entity Extraction
-  useEffect(() => {
-    const intervals = [
-        setTimeout(() => setStep(1), 2000), // Diarization
-        setTimeout(() => setStep(2), 6000), // Transcription
-        setTimeout(() => setStep(3), 10000), // Entity Extraction
-    ];
-    return () => intervals.forEach(clearTimeout);
-  }, []);
-
   const steps = [
-    { label: "Initializing...", detail: "Preparing secure upload" },
-    { label: "Diarization & Transcription", detail: "Identifying speakers and converting audio to text (Whisper/Gemini)" },
-    { label: "Entity Extraction", detail: "Running LLM analysis for Tech Details & Action Items" },
-    { label: "Formatting Results", detail: "Generating JSON output" }
+    { label: "Preparing Files", detail: "Reading audio data and preparing for secure transmission" },
+    { label: "Transcribing Audio", detail: "Phase 1: Converting audio segments to text with speaker identification" },
+    { label: "Extracting Intelligence", detail: "Phase 2: Analyzing transcript for decisions, action items, and tech specs" },
+    { label: "Finalizing Report", detail: "Formatting structure and validating JSON output" }
   ];
 
   return (
@@ -39,20 +32,20 @@ const ProcessingView: React.FC = () => {
 
         <div className="w-full space-y-4 text-left mt-4">
             {steps.map((s, idx) => (
-                <div key={idx} className={`flex items-start transition-opacity duration-500 ${idx > step ? 'opacity-30' : 'opacity-100'}`}>
+                <div key={idx} className={`flex items-start transition-opacity duration-500 ${idx > currentStep ? 'opacity-30' : 'opacity-100'}`}>
                     <div className="flex-shrink-0 h-6 w-6 flex items-center justify-center">
-                        {idx < step ? (
+                        {idx < currentStep ? (
                              <svg className="w-5 h-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                              </svg>
-                        ) : idx === step ? (
+                        ) : idx === currentStep ? (
                             <div className="w-2.5 h-2.5 bg-brand-600 rounded-full animate-bounce"></div>
                         ) : (
                             <div className="w-2.5 h-2.5 bg-slate-300 rounded-full"></div>
                         )}
                     </div>
                     <div className="ml-3">
-                        <p className={`text-sm font-medium ${idx === step ? 'text-brand-600' : 'text-slate-700'}`}>{s.label}</p>
+                        <p className={`text-sm font-medium ${idx === currentStep ? 'text-brand-600' : 'text-slate-700'}`}>{s.label}</p>
                         <p className="text-xs text-slate-500">{s.detail}</p>
                     </div>
                 </div>
