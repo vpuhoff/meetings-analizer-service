@@ -134,3 +134,29 @@ export const askMeetingQuestion = async (files: File[], question: string, projec
     throw error;
   }
 };
+
+export const generateMarkdownReport = async (analysis: MeetingAnalysis, language: string = "English"): Promise<string> => {
+  try {
+    const response = await fetch('/api/markdown', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        analysis,
+        language,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json();
+      throw new Error(error.error || 'Markdown generation failed');
+    }
+
+    const result = await response.json();
+    return result.markdown || "# Error generating report";
+  } catch (error) {
+    console.error("Markdown generation failed:", error);
+    throw error;
+  }
+};
