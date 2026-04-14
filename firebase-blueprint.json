@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "Meeting": {
+      "title": "Meeting",
+      "description": "A meeting that was analyzed",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The user who owns this meeting" },
+        "projectId": { "type": "string", "description": "The project this meeting belongs to" },
+        "title": { "type": "string", "description": "Meeting title" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When the meeting was first analyzed" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "When the meeting was last updated" },
+        "techStackTags": { "type": "array", "items": { "type": "string" }, "description": "Tech stack tags extracted" },
+        "projectTags": { "type": "array", "items": { "type": "string" }, "description": "Project tags extracted" }
+      },
+      "required": ["userId", "title", "createdAt", "updatedAt"]
+    },
+    "MeetingVersion": {
+      "title": "Meeting Version",
+      "description": "A specific version of the meeting analysis",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The user who owns this version" },
+        "meetingId": { "type": "string", "description": "The meeting this version belongs to" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "When this version was created" },
+        "feedback": { "type": "string", "description": "Feedback provided to generate this version" },
+        "analysis": { "type": "string", "description": "JSON stringified MeetingAnalysis" }
+      },
+      "required": ["userId", "meetingId", "createdAt", "analysis"]
+    }
+  },
+  "firestore": {
+    "/meetings/{meetingId}": {
+      "schema": { "$ref": "#/entities/Meeting" },
+      "description": "Stores meetings"
+    },
+    "/meetings/{meetingId}/versions/{versionId}": {
+      "schema": { "$ref": "#/entities/MeetingVersion" },
+      "description": "Stores versions of a meeting analysis"
+    }
+  }
+}

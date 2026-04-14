@@ -38,17 +38,22 @@ const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelect, disabled }) => {
 
   const processFiles = (fileList: FileList) => {
      const files = Array.from(fileList);
-     const validTypes = ['audio/mpeg', 'audio/wav', 'audio/x-m4a', 'audio/mp4', 'audio/webm'];
-     const maxSize = 20 * 1024 * 1024; // 20MB limit for demo stability per file
+     
+     // Allowed types: Audio + Text formats
+     const audioTypes = ['audio/', 'video/']; // Allowing video mime prefix as some containers are audio-only
+     const textTypes = ['text/', 'application/json', 'application/x-subrip']; // txt, md, json, srt
+     const textExtensions = ['.txt', '.md', '.json', '.srt', '.vtt', '.csv'];
 
      const validFiles = files.filter(file => {
-        const isValidType = validTypes.some(type => file.type.includes(type) || file.type.includes('audio')) || file.type.startsWith('audio/');
-        const isValidSize = file.size <= maxSize;
-        return isValidType && isValidSize;
+        const isAudio = audioTypes.some(type => file.type.includes(type));
+        const isTextType = textTypes.some(type => file.type.includes(type));
+        const hasTextExt = textExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+        
+        return isAudio || isTextType || hasTextExt;
      });
 
      if (validFiles.length !== files.length) {
-         alert(`Some files were skipped. Ensure they are valid audio files under 20MB.`);
+         alert(`Some files were skipped. Supported formats: Audio (MP3, WAV, etc.) or Text (TXT, MD, SRT, JSON).`);
      }
 
      if (validFiles.length > 0) {
@@ -73,7 +78,7 @@ const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelect, disabled }) => {
         type="file" 
         ref={inputRef} 
         onChange={handleChange} 
-        accept="audio/*" 
+        accept="audio/*, .txt, .md, .json, .srt, .vtt" 
         className="hidden" 
         multiple
         disabled={disabled}
@@ -82,15 +87,15 @@ const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelect, disabled }) => {
       <div className="space-y-4">
         <div className="flex justify-center">
             <svg xmlns="http://www.w3.org/2000/svg" className={`h-12 w-12 ${isDragOver ? 'text-brand-600' : 'text-slate-400'}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
         </div>
         <div>
           <p className="text-lg font-medium text-slate-700">
-            {isDragOver ? "Drop audio files here" : (fileCount > 0 ? `${fileCount} file(s) selected` : "Click to upload multiple audio files")}
+            {isDragOver ? "Drop files here" : (fileCount > 0 ? `${fileCount} file(s) selected` : "Upload Audio or Text Transcript")}
           </p>
           <p className="text-sm text-slate-500 mt-1">
-            MP3, WAV, M4A (Max 20MB per file)
+            Audio (MP3, WAV) or Text (TXT, MD, SRT)
           </p>
         </div>
       </div>

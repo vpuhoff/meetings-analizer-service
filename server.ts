@@ -17,6 +17,11 @@ if (!API_KEY) {
 // Initialize Gemini
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
+// Models Configuration
+const MODEL_TRANSCRIPTION = "gemini-3-flash-preview"; // Supports thinking config
+const MODEL_ANALYSIS = "gemini-3-pro-preview"; // Advanced reasoning
+const MODEL_REPORT = "gemini-3-flash-preview"; // Fast text generation
+
 // In-memory storage for tasks
 interface Task {
   id: string;
@@ -32,26 +37,12 @@ const tasks = new Map<string, Task>();
 const app = express();
 const upload = multer({ storage: multer.memoryStorage() });
 
-app.use(cors() as unknown as express.RequestHandler);
-app.use(express.json({ limit: '50mb' }) as unknown as express.RequestHandler); // Increased limit for large transcript payloads
+app.use(cors() as any);
+app.use(express.json({ limit: '50mb' }) as any); // Increased limit for large transcript payloads
 
 // --- Schemas ---
 
-// 1. Schema for Transcription only
-const transcriptSchema: Schema = {
-  type: Type.ARRAY,
-  items: {
-    type: Type.OBJECT,
-    properties: {
-      speaker: { type: Type.STRING },
-      timestamp: { type: Type.STRING },
-      text: { type: Type.STRING },
-    },
-    required: ["speaker", "timestamp", "text"],
-  },
-};
-
-// 2. Schema for Intelligence only (No transcript)
+// 1. Intelligence Schema (No transcript)
 const intelligenceSchema: Schema = {
   type: Type.OBJECT,
   properties: {
@@ -92,7 +83,7 @@ const intelligenceSchema: Schema = {
 
 // --- Endpoints ---
 
-app.post('/v1/process-meeting', upload.array('files') as unknown as express.RequestHandler, async (req: any, res: any) => {
+app.post('/v1/process-meeting', upload.array('files') as any, async (req: any, res: any) => {
   try {
     if (!req.files || req.files.length === 0) {
       res.status(400).json({ error: "No files provided." });
@@ -153,7 +144,6 @@ app.post('/v1/generate-report', async (req: any, res: any) => {
       return;
     }
 
-    const model = "gemini-flash-latest";
     const prompt = `
     You are a professional technical writer and secretary. 
     
@@ -172,8 +162,9 @@ app.post('/v1/generate-report', async (req: any, res: any) => {
     ## Appendix: Full Transcript (Format nicely with timestamps and speaker names)
 
     Formatting Rules:
-    - Do not add extra blank lines between rows in tables.
-    - Ensure tables are compact.
+    - Tables MUST be compact. NO empty lines between rows.
+    - STRICTLY DO NOT add blank lines between table rows.
+    - Tables must be continuous blocks of text.
     - Use clear headers and lists.
 
     Data:
@@ -181,7 +172,7 @@ app.post('/v1/generate-report', async (req: any, res: any) => {
     `;
 
     const response = await ai.models.generateContent({
-      model: model,
+      model: MODEL_REPORT,
       contents: { parts: [{ text: prompt }] },
       config: {
         temperature: 0.2,
@@ -197,54 +188,123 @@ app.post('/v1/generate-report', async (req: any, res: any) => {
   }
 });
 
+// --- Helper Parser ---
+// Converts "[00:00] Speaker: Text" format into TranscriptSegment[]
+// supports free text fallback
+function parseFlexibleTranscript(text: string) {
+  const segments: { speaker: string; timestamp: string; text: string }[] = [];
+  const lines = text.split('\n');
+  let currentSegment: { speaker: string; timestamp: string; text: string } | null = null;
+
+  // Regex to match strictly formatted lines: [00:00] Speaker: Text
+  const strictRegex = /^\[(\d{1,2}:\d{2}(?::\d{2})?)\]\s*([^:]+):\s*(.+)$/;
+
+  const hasStrictStructure = lines.some(l => strictRegex.test(l.trim()));
+
+  if (hasStrictStructure) {
+      for (const line of lines) {
+        const cleanLine = line.trim();
+        if (!cleanLine) continue;
+
+        const match = cleanLine.match(strictRegex);
+        if (match) {
+          if (currentSegment) segments.push(currentSegment);
+          currentSegment = {
+            timestamp: match[1],
+            speaker: match[2].trim(),
+            text: match[3].trim()
+          };
+        } else {
+          // It's a continuation of the previous line
+          if (currentSegment) currentSegment.text += " " + cleanLine;
+        }
+      }
+      if (currentSegment) segments.push(currentSegment);
+  } else {
+      // Fallback: Treat as free text
+      for (const line of lines) {
+          const cleanLine = line.trim();
+          if (!cleanLine) continue;
+          
+           // Try to detect speaker at start of line "Name: Text" even without timestamp
+           const looseSpeakerMatch = /^([A-Za-z0-9 ]+):\s+(.+)/.exec(cleanLine);
+          
+           if (looseSpeakerMatch) {
+             segments.push({
+                 timestamp: "00:00",
+                 speaker: looseSpeakerMatch[1],
+                 text: looseSpeakerMatch[2]
+             });
+           } else {
+             segments.push({
+                timestamp: "00:00", 
+                speaker: "Document",
+                text: cleanLine
+             });
+           }
+      }
+  }
+
+  return segments;
+}
+
 // --- Background Logic ---
 
 async function processMeetingInBackground(
   taskId: string, 
-  files: { mimetype: string; buffer: Buffer }[], 
+  files: { mimetype: string; buffer: Buffer, originalname: string }[], 
   language: string,
   projectContext?: string,
   teamContext?: string
 ) {
   try {
-    const model = "gemini-flash-latest";
-
-    // PHASE 1: Transcribe each file individually (Parallel)
-    // This avoids output token limits for massive transcripts
-    console.log(`[Task ${taskId}] Starting transcription phase...`);
+    console.log(`[Task ${taskId}] Processing files...`);
     
     const transcriptionPromises = files.map(async (file, index) => {
-      const base64Data = file.buffer.toString('base64');
-      
-      const prompt = `
-      Transcribe this audio segment.
-      - Identify speakers (Speaker A, B, etc.).
-      - Provide timestamps.
-      - Output strictly as a JSON array of objects: [{ "speaker": "...", "timestamp": "...", "text": "..." }]
-      `;
+      const isAudio = file.mimetype.startsWith('audio') || file.mimetype.startsWith('video');
+      // Simple extension check for text files in case mimetype is octet-stream
+      const isText = file.mimetype.startsWith('text') || file.originalname.match(/\.(txt|md|srt|vtt|json)$/i);
 
-      const response = await ai.models.generateContent({
-        model: model,
-        contents: {
-          parts: [
-            { inlineData: { mimeType: file.mimetype, data: base64Data } },
-            { text: prompt }
-          ]
-        },
-        config: {
-          responseMimeType: "application/json",
-          responseSchema: transcriptSchema,
-          temperature: 0,
-        }
-      });
-      
-      const text = response.text;
-      if (!text) return [];
-      try {
-        return JSON.parse(text);
-      } catch (e) {
-        console.warn(`Failed to parse transcript for file ${index}`, e);
-        return [];
+      if (isAudio) {
+          const base64Data = file.buffer.toString('base64');
+          
+          const prompt = `
+          Transcribe this audio segment.
+          
+          IMPORTANT: The transcript MUST be written in ${language}.
+          If the audio is in a different language, translate it to ${language}.
+
+          Strict Output Format per line:
+          [MM:SS] Speaker Name: The spoken text.
+
+          Rules:
+          - Do NOT use JSON.
+          - Do NOT use Markdown formatting (bold, italics, etc).
+          - Identify speakers as Speaker 1, Speaker 2, or names if available.
+          - Start every new speech segment with the timestamp in brackets.
+          `;
+
+          const response = await ai.models.generateContent({
+            model: MODEL_TRANSCRIPTION,
+            contents: {
+              parts: [
+                { inlineData: { mimeType: file.mimetype, data: base64Data } },
+                { text: prompt }
+              ]
+            },
+            config: {
+              temperature: 0,
+              thinkingConfig: { thinkingBudget: 0 } // Minimal thinking (disabled)
+            }
+          });
+          
+          const text = response.text || "";
+          return parseFlexibleTranscript(text);
+      } else {
+          // Handle Text File
+          console.log(`[Task ${taskId}] Reading text file: ${file.originalname}`);
+          const textContent = file.buffer.toString('utf-8');
+          return parseFlexibleTranscript(textContent);
       }
     });
 
@@ -252,10 +312,10 @@ async function processMeetingInBackground(
     // Flatten the array of arrays
     const fullTranscript = transcriptsParts.flat();
 
-    console.log(`[Task ${taskId}] Transcription complete. ${fullTranscript.length} segments. Starting analysis...`);
+    console.log(`[Task ${taskId}] Input processing complete. ${fullTranscript.length} segments. Starting analysis...`);
 
     // PHASE 2: Analyze the full transcript
-    // Convert transcript object to a string format to save tokens and provide context
+    // Use the advanced model for reasoning.
     const transcriptText = fullTranscript.map((t: any) => `[${t.timestamp}] ${t.speaker}: ${t.text}`).join('\n');
 
     let systemPrompt = `
@@ -281,7 +341,7 @@ async function processMeetingInBackground(
     const userPrompt = `Analyze this transcript:\n\n${transcriptText}`;
 
     const analysisResponse = await ai.models.generateContent({
-      model: model,
+      model: MODEL_ANALYSIS,
       contents: {
         parts: [{ text: userPrompt }]
       },

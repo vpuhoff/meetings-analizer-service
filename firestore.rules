@@ -1,0 +1,105 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: meetings
+    // Document ID: auto-generated
+    // Fields:
+    //   - userId: string (required) - The user who owns this meeting
+    //   - projectId: string (optional) - The project this meeting belongs to
+    //   - title: string (required) - Meeting title
+    //   - createdAt: string (required) - ISO 8601 date string
+    //   - updatedAt: string (required) - ISO 8601 date string
+    //   - techStackTags: list of strings (optional)
+    //   - projectTags: list of strings (optional)
+    //
+    // Collection: meetings/{meetingId}/versions
+    // Document ID: auto-generated
+    // Fields:
+    //   - userId: string (required) - The user who owns this version
+    //   - meetingId: string (required) - The meeting this version belongs to
+    //   - createdAt: string (required) - ISO 8601 date string
+    //   - feedback: string (optional) - Feedback provided
+    //   - analysis: string (required) - JSON stringified MeetingAnalysis
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function uidUnchanged() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == resource.data.userId;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function isValidDateString(dateStr) {
+      return dateStr is string && dateStr.matches("^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}.*Z?$");
+    }
+
+    function isValidStringList(list, maxSize, maxStrLen) {
+      return list is list && list.size() <= maxSize && 
+             (list.size() == 0 || (list[0] is string && list[0].size() <= maxStrLen));
+    }
+
+    // Domain Validators
+    function isValidMeeting(data) {
+      return hasRequiredFields(['userId', 'title', 'createdAt', 'updatedAt']) &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+             isValidDateString(data.createdAt) &&
+             isValidDateString(data.updatedAt) &&
+             (!('projectId' in data) || (data.projectId is string && data.projectId.size() <= 100)) &&
+             (!('techStackTags' in data) || isValidStringList(data.techStackTags, 50, 100)) &&
+             (!('projectTags' in data) || isValidStringList(data.projectTags, 50, 100));
+    }
+
+    function isValidMeetingVersion(data, meetingId) {
+      return hasRequiredFields(['userId', 'meetingId', 'createdAt', 'analysis']) &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.meetingId is string && data.meetingId == meetingId &&
+             isValidDateString(data.createdAt) &&
+             data.analysis is string && data.analysis.size() <= 1000000 && // 1MB limit check
+             (!('feedback' in data) || (data.feedback is string && data.feedback.size() <= 10000));
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /meetings/{meetingId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && isValidMeeting(request.resource.data) && uidUnchanged();
+      allow update: if isAuthenticated() && isDocOwner() && isValidMeeting(request.resource.data) && uidNotModified() && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isAuthenticated() && isDocOwner();
+
+      match /versions/{versionId} {
+        allow read: if isAuthenticated() && get(/databases/$(database)/documents/meetings/$(meetingId)).data.userId == request.auth.uid;
+        allow create: if isAuthenticated() && get(/databases/$(database)/documents/meetings/$(meetingId)).data.userId == request.auth.uid && isValidMeetingVersion(request.resource.data, meetingId) && uidUnchanged();
+        allow update: if false; // Versions should be immutable
+        allow delete: if isAuthenticated() && get(/databases/$(database)/documents/meetings/$(meetingId)).data.userId == request.auth.uid;
+      }
+    }
+  }
+}

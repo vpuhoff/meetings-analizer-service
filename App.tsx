@@ -5,9 +5,14 @@ import Dropzone from './components/Dropzone';
 import ProcessingView from './components/ProcessingView';
 import Dashboard from './components/Dashboard';
 import ProjectManager from './components/ProjectManager';
+import MeetingHistory from './components/MeetingHistory';
 import { analyzeMeeting, askMeetingQuestion } from './services/geminiService';
 import { getProjects, saveProjects, exportProjectsToFile } from './services/projectService';
+import { saveMeeting, saveMeetingVersion, Meeting, MeetingVersion } from './services/meetingService';
 import { MeetingAnalysis, ProcessingStatus, Project } from './types';
+import { auth } from './firebase';
+import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User, signOut } from 'firebase/auth';
+import { v4 as uuidv4 } from 'uuid';
 
 const App: React.FC = () => {
   const [status, setStatus] = useState<ProcessingStatus>('idle');
@@ -22,6 +27,39 @@ const App: React.FC = () => {
   const [showProjectManager, setShowProjectManager] = useState(false);
   
   const [currentFiles, setCurrentFiles] = useState<File[]>([]);
+  
+  // Auth & History State
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null);
+
+  // Auth listener
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsAuthReady(true);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  const handleLogin = async () => {
+    const provider = new GoogleAuthProvider();
+    try {
+      await signInWithPopup(auth, provider);
+    } catch (error) {
+      console.error("Login failed", error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+      setShowHistory(false);
+    } catch (error) {
+      console.error("Logout failed", error);
+    }
+  };
 
   // Load projects on mount
   useEffect(() => {
@@ -79,8 +117,41 @@ const App: React.FC = () => {
         undefined, 
         (step) => setProcessingStep(step)
       );
+      
       setResult(data);
       setStatus('completed');
+
+      // Save to Firebase if logged in
+      if (user) {
+        const meetingId = uuidv4();
+        setCurrentMeetingId(meetingId);
+        
+        const techStackTags = data.techDetails || [];
+        const projectTags = data.projects || [];
+        
+        const newMeeting: Meeting = {
+          id: meetingId,
+          userId: user.uid,
+          projectId: selectedProjectId || undefined,
+          title: files.map(f => f.name).join(', ') || 'Untitled Meeting',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          techStackTags,
+          projectTags
+        };
+        
+        const newVersion: MeetingVersion = {
+          id: uuidv4(),
+          userId: user.uid,
+          meetingId: meetingId,
+          createdAt: new Date().toISOString(),
+          analysis: JSON.stringify(data)
+        };
+
+        await saveMeeting(newMeeting);
+        await saveMeetingVersion(newVersion);
+      }
+
     } catch (err: any) {
       console.error(err);
       setErrorMsg(err.message || "An unexpected error occurred during processing.");
@@ -89,7 +160,17 @@ const App: React.FC = () => {
   };
 
   const handleReanalyze = async (feedback: string) => {
-    if (currentFiles.length === 0) return;
+    let filesToAnalyze = currentFiles;
+    
+    // If we don't have the original files (e.g., opened from history), 
+    // we can reconstruct a text file from the transcript.
+    if (filesToAnalyze.length === 0 && result && result.transcript) {
+        const transcriptText = result.transcript.map(t => `[${t.timestamp}] ${t.speaker}: ${t.text}`).join('\n');
+        const file = new File([transcriptText], "transcript.txt", { type: "text/plain" });
+        filesToAnalyze = [file];
+    }
+
+    if (filesToAnalyze.length === 0) return;
 
     setStatus('processing');
     setProcessingStep(0);
@@ -101,7 +182,7 @@ const App: React.FC = () => {
         const team = project ? project.team : undefined;
 
         const data = await analyzeMeeting(
-            currentFiles, 
+            filesToAnalyze, 
             language, 
             context, 
             team, 
@@ -110,6 +191,32 @@ const App: React.FC = () => {
         );
         setResult(data);
         setStatus('completed');
+
+        // Save new version to Firebase if logged in
+        if (user && currentMeetingId) {
+            const newVersion: MeetingVersion = {
+                id: uuidv4(),
+                userId: user.uid,
+                meetingId: currentMeetingId,
+                createdAt: new Date().toISOString(),
+                feedback: feedback,
+                analysis: JSON.stringify(data)
+            };
+            await saveMeetingVersion(newVersion);
+            
+            // Update meeting's updatedAt and tags
+            const techStackTags = data.techDetails || [];
+            const projectTags = data.projects || [];
+            
+            const updatedMeeting: Partial<Meeting> & { id: string } = {
+                id: currentMeetingId,
+                updatedAt: new Date().toISOString(),
+                techStackTags,
+                projectTags
+            };
+            await saveMeeting(updatedMeeting);
+        }
+
     } catch (err: any) {
         console.error(err);
         setErrorMsg(err.message || "An error occurred during re-analysis.");
@@ -118,11 +225,18 @@ const App: React.FC = () => {
   };
 
   const handleAskQuestion = async (question: string): Promise<string> => {
-      if (currentFiles.length === 0) return "No files loaded.";
+      let filesToAnalyze = currentFiles;
+      if (filesToAnalyze.length === 0 && result && result.transcript) {
+          const transcriptText = result.transcript.map(t => `[${t.timestamp}] ${t.speaker}: ${t.text}`).join('\n');
+          const file = new File([transcriptText], "transcript.txt", { type: "text/plain" });
+          filesToAnalyze = [file];
+      }
+      if (filesToAnalyze.length === 0) return "No files or transcript loaded.";
+      
       const project = projects.find(p => p.id === selectedProjectId);
       const context = project ? project.context : undefined;
       const team = project ? project.team : undefined;
-      return await askMeetingQuestion(currentFiles, question, context, team);
+      return await askMeetingQuestion(filesToAnalyze, question, context, team);
   };
 
   const handleReset = () => {
@@ -131,7 +245,19 @@ const App: React.FC = () => {
     setErrorMsg(null);
     setCurrentFiles([]);
     setProcessingStep(0);
+    setCurrentMeetingId(null);
   };
+
+  const handleOpenHistoryReport = (analysis: MeetingAnalysis, meetingId: string) => {
+    setResult(analysis);
+    setCurrentMeetingId(meetingId);
+    setStatus('completed');
+    setShowHistory(false);
+  };
+
+  if (!isAuthReady) {
+    return <div className="min-h-screen flex items-center justify-center bg-slate-50">Loading...</div>;
+  }
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 pb-20">
@@ -151,6 +277,36 @@ const App: React.FC = () => {
                 <div className="hidden md:flex text-xs font-medium text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
                     Powered by Gemini 2.5
                 </div>
+                {user ? (
+                  <div className="flex items-center space-x-3">
+                    <button 
+                      onClick={() => {
+                        setShowHistory(!showHistory);
+                        if (!showHistory) handleReset();
+                      }}
+                      className={`text-sm font-medium px-3 py-1.5 rounded-md transition-colors ${showHistory ? 'bg-brand-100 text-brand-700' : 'text-slate-600 hover:bg-slate-100'}`}
+                    >
+                      History
+                    </button>
+                    <div className="flex items-center space-x-2">
+                      {user.photoURL ? (
+                        <img src={user.photoURL} alt="Profile" className="w-8 h-8 rounded-full" referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-bold text-sm">
+                          {user.email?.charAt(0).toUpperCase()}
+                        </div>
+                      )}
+                      <button onClick={handleLogout} className="text-xs text-slate-500 hover:text-slate-700">Logout</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button 
+                    onClick={handleLogin}
+                    className="text-sm font-medium px-4 py-1.5 bg-brand-600 text-white rounded-md hover:bg-brand-700 transition-colors"
+                  >
+                    Sign In
+                  </button>
+                )}
             </div>
           </div>
         </div>
@@ -159,7 +315,22 @@ const App: React.FC = () => {
       {/* Main Content */}
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-10">
         
-        {status === 'idle' && (
+        {showHistory && user ? (
+          <div className="animate-fade-in-up">
+            <div className="flex justify-between items-center mb-6">
+              <h1 className="text-2xl font-bold text-slate-900">Your Meetings</h1>
+              <button 
+                onClick={() => setShowHistory(false)}
+                className="text-sm text-brand-600 hover:text-brand-700 font-medium"
+              >
+                &larr; Back to Extractor
+              </button>
+            </div>
+            <MeetingHistory userId={user.uid} onOpenReport={handleOpenHistoryReport} />
+          </div>
+        ) : (
+          <>
+            {status === 'idle' && (
           <div className="animate-fade-in-up">
             <Hero />
             
@@ -292,6 +463,8 @@ const App: React.FC = () => {
               </button>
             </div>
           </div>
+        )}
+          </>
         )}
 
       </main>
