@@ -16,5 +16,23 @@ View your app in AI Studio: https://ai.studio/apps/3e7eda1f-2221-4ec9-ae83-35775
 1. Install dependencies:
    `npm install`
 2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
+3. Add `http://localhost:8080` to Firebase Console > Authentication > Settings > Authorized domains
+4. Run the app:
    `npm run dev`
+
+## Deploy
+
+### Vercel (Recommended)
+1. Push code to GitHub
+2. Import project on [vercel.com](https://vercel.com)
+3. Add `GEMINI_API_KEY` in Environment Variables
+4. Add deployed domain to Firebase Console > Authentication > Authorized domains
+
+### Firebase Hosting
+```bash
+npm install -g firebase-tools
+firebase login
+firebase init hosting
+firebase deploy
+```
+Add `GEMINI_API_KEY` to Firebase config or use Firebase Functions.
