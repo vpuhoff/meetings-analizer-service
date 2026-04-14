@@ -32,7 +32,6 @@ View your app in AI Studio: https://ai.studio/apps/3e7eda1f-2221-4ec9-ae83-35775
 ```bash
 npm install -g firebase-tools
 firebase login
-firebase init hosting
 firebase deploy
 ```
-Add `GEMINI_API_KEY` to Firebase config or use Firebase Functions.
+Note: This project uses static hosting. The `firebase.json` is already configured. Add `GEMINI_API_KEY` to `.env.local` for local development or use environment variables in Firebase Console.
