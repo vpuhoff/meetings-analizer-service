@@ -18,12 +18,10 @@ View your app in AI Studio: https://ai.studio/apps/3e7eda1f-2221-4ec9-ae83-35775
 3. Run the app:
    `npm run dev`
 
-Note: For local development with API functions, you'll need to run the functions separately or use a proxy. The app is designed for Cloudflare Pages Functions deployment.
-
 ## Deploy
 
-### Cloudflare Pages Functions (Recommended)
-This project uses Cloudflare Pages Functions to keep the API key secure on the server-side.
+### Cloudflare Pages (Recommended)
+This project uses Cloudflare Pages with Functions to keep the API key secure on the server-side.
 
 1. Push code to GitHub
 2. Create a new project on [Cloudflare Pages](https://pages.cloudflare.com)
@@ -32,21 +30,14 @@ This project uses Cloudflare Pages Functions to keep the API key secure on the s
    - Build command: `npm run build`
    - Build output directory: `dist`
 5. After deployment, add environment variable:
-   - Go to Settings > Functions > Environment variables
+   - Go to Settings > Environment variables
    - Add `GEMINI_API_KEY` = your Gemini API key
-6. Add deployed domain to Firebase Console > Authentication > Authorized domains
+6. Add deployed domain to Firebase Console > Authentication > Settings > Authorized domains
 
-### Vercel
-1. Push code to GitHub
-2. Import project on [vercel.com](https://vercel.com)
-3. Add `GEMINI_API_KEY` in Environment Variables
-4. Create Vercel API Routes (similar to Cloudflare Functions) or use Vercel Functions
-5. Add deployed domain to Firebase Console > Authentication > Authorized domains
+The functions in `functions/` directory are automatically deployed with the site.
 
-### Firebase Hosting
+### Local Development with Wrangler
 ```bash
-npm install -g firebase-tools
-firebase login
-firebase deploy
+npm run preview
 ```
-Note: Firebase Hosting requires Firebase Functions for server-side API keys. This project is configured for Cloudflare Pages Functions.
+This builds the project and runs it locally with Wrangler, including the functions.

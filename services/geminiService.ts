@@ -1,7 +1,5 @@
 import { MeetingAnalysis, TranscriptSegment } from "../types";
 
-const WORKER_URL = "https://meetings-analizer-service.vpuhoff92.workers.dev";
-
 // Helper to convert File to Base64
 const fileToBase64 = (file: File): Promise<string> => {
   return new Promise((resolve, reject) => {
@@ -58,7 +56,7 @@ export const analyzeMeeting = async (
 
     if (onProgress) onProgress(1); // Calling API
 
-    const response = await fetch(`${WORKER_URL}/api/analyze`, {
+    const response = await fetch('/api/analyze', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -111,7 +109,7 @@ export const askMeetingQuestion = async (files: File[], question: string, projec
       }
     }));
 
-    const response = await fetch(`${WORKER_URL}/api/question`, {
+    const response = await fetch('/api/question', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -139,7 +137,7 @@ export const askMeetingQuestion = async (files: File[], question: string, projec
 
 export const generateMarkdownReport = async (analysis: MeetingAnalysis, language: string = "English"): Promise<string> => {
   try {
-    const response = await fetch(`${WORKER_URL}/api/markdown`, {
+    const response = await fetch('/api/markdown', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
