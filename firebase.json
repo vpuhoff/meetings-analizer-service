@@ -1,4 +1,8 @@
 {
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
   "hosting": {
     "public": "dist",
     "ignore": [
@@ -15,5 +19,8 @@
     "predeploy": [
       "npm run build"
     ]
+  },
+  "projects": {
+    "default": "gen-lang-client-0937773369"
   }
 }
