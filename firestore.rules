@@ -130,5 +130,9 @@ service cloud.firestore {
       allow update: if isAuthenticated() && isDocOwner() && isValidProject(request.resource.data) && uidNotModified() && request.resource.data.createdAt == resource.data.createdAt;
       allow delete: if isAuthenticated() && isDocOwner();
     }
+
+    match /projects {
+      allow list: if isAuthenticated();
+    }
   }
 }
