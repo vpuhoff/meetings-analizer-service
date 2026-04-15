@@ -125,14 +125,11 @@ service cloud.firestore {
     }
 
     match /projects/{projectId} {
-      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
-      allow create: if isAuthenticated() && isValidProject(request.resource.data) && uidUnchanged();
-      allow update: if isAuthenticated() && isDocOwner() && isValidProject(request.resource.data) && uidNotModified() && request.resource.data.createdAt == resource.data.createdAt;
-      allow delete: if isAuthenticated() && isDocOwner();
+      allow read, write: if request.auth != null;
     }
 
     match /projects {
-      allow list: if isAuthenticated();
+      allow list: if request.auth != null;
     }
   }
 }
