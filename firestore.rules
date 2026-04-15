@@ -25,6 +25,17 @@ service cloud.firestore {
     //   - feedback: string (optional) - Feedback provided
     //   - analysis: string (required) - JSON stringified MeetingAnalysis
     //
+    // Collection: projects
+    // Document ID: auto-generated
+    // Fields:
+    //   - userId: string (required) - The user who owns this project
+    //   - name: string (required) - Project name
+    //   - description: string (optional) - Project description
+    //   - context: string (required) - Project context
+    //   - team: string (optional) - Team members
+    //   - createdAt: string (required) - ISO 8601 date string
+    //   - updatedAt: string (required) - ISO 8601 date string
+    //
     // ===============================================================
 
     // ===============================================================
@@ -84,6 +95,17 @@ service cloud.firestore {
              (!('feedback' in data) || (data.feedback is string && data.feedback.size() <= 10000));
     }
 
+    function isValidProject(data) {
+      return hasRequiredFields(['userId', 'name', 'context', 'createdAt', 'updatedAt']) &&
+             data.userId is string && data.userId == request.auth.uid &&
+             data.name is string && data.name.size() > 0 && data.name.size() <= 200 &&
+             data.context is string && data.context.size() > 0 && data.context.size() <= 10000 &&
+             isValidDateString(data.createdAt) &&
+             isValidDateString(data.updatedAt) &&
+             (!('description' in data) || (data.description is string && data.description.size() <= 1000)) &&
+             (!('team' in data) || (data.team is string && data.team.size() <= 1000));
+    }
+
     // ===============================================================
     // Rules
     // ===============================================================
@@ -100,6 +122,13 @@ service cloud.firestore {
         allow update: if false; // Versions should be immutable
         allow delete: if isAuthenticated() && get(/databases/$(database)/documents/meetings/$(meetingId)).data.userId == request.auth.uid;
       }
+    }
+
+    match /projects/{projectId} {
+      allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
+      allow create: if isAuthenticated() && isValidProject(request.resource.data) && uidUnchanged();
+      allow update: if isAuthenticated() && isDocOwner() && isValidProject(request.resource.data) && uidNotModified() && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isAuthenticated() && isDocOwner();
     }
   }
 }
