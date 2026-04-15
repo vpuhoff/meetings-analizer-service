@@ -226,11 +226,11 @@ const Projects: React.FC<ProjectsProps> = ({ userId, onSelectProject, selectedPr
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 gap-4">
         {projects.map((project) => (
           <div
             key={project.id}
-            className={`bg-white rounded-xl shadow-sm border-2 p-6 cursor-pointer transition-all hover:shadow-lg hover:scale-105 ${
+            className={`bg-white rounded-xl shadow-sm border-2 p-6 cursor-pointer transition-all hover:shadow-lg hover:scale-[1.01] ${
               selectedProjectId === project.id ? 'border-brand-500 ring-2 ring-brand-200' : 'border-slate-200'
             }`}
             onClick={() => onSelectProject(project)}
@@ -242,7 +242,7 @@ const Projects: React.FC<ProjectsProps> = ({ userId, onSelectProject, selectedPr
                   e.stopPropagation();
                   handleDelete(project.id);
                 }}
-                className="text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded text-sm font-medium transition-colors"
+                className="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded text-sm font-medium transition-colors"
               >
                 Delete
               </button>
@@ -250,7 +250,7 @@ const Projects: React.FC<ProjectsProps> = ({ userId, onSelectProject, selectedPr
             {project.description && (
               <p className="text-sm text-slate-600 mb-4 line-clamp-2">{project.description}</p>
             )}
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="bg-slate-50 rounded-lg p-3">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Context</p>
                 <p className="text-sm text-slate-700 line-clamp-3">{project.context}</p>
