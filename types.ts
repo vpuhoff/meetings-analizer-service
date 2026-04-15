@@ -36,8 +36,11 @@ export interface ProcessingError {
 
 export interface Project {
   id: string;
+  userId: string;
   name: string;
   description?: string;
   context: string;
   team?: string;
+  createdAt: string;
+  updatedAt: string;
 }

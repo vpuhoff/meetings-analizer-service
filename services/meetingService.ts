@@ -11,6 +11,17 @@ export enum OperationType {
   WRITE = 'write',
 }
 
+export interface Project {
+  id: string;
+  userId: string;
+  name: string;
+  description?: string;
+  context: string;
+  team?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface FirestoreErrorInfo {
   error: string;
   operationType: OperationType;
@@ -121,6 +132,37 @@ export async function deleteMeeting(meetingId: string) {
     // Note: In a real app, you'd want to delete versions first or use a Cloud Function.
     // For simplicity, we'll just delete the meeting document here.
     await deleteDoc(doc(db, 'meetings', meetingId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+// Project CRUD functions
+export async function saveProject(project: Partial<Project> & { id: string }) {
+  const path = `projects/${project.id}`;
+  try {
+    await setDoc(doc(db, 'projects', project.id), project, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function getProjects(userId: string): Promise<Project[]> {
+  const path = 'projects';
+  try {
+    const q = query(collection(db, path), where('userId', '==', userId), orderBy('createdAt', 'desc'));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(doc => doc.data() as Project);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+    return [];
+  }
+}
+
+export async function deleteProject(projectId: string) {
+  const path = `projects/${projectId}`;
+  try {
+    await deleteDoc(doc(db, 'projects', projectId));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }

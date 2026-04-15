@@ -4,12 +4,11 @@ import Hero from './components/Hero';
 import Dropzone from './components/Dropzone';
 import ProcessingView from './components/ProcessingView';
 import Dashboard from './components/Dashboard';
-import ProjectManager from './components/ProjectManager';
+import Projects from './components/Projects';
 import MeetingHistory from './components/MeetingHistory';
 import { analyzeMeeting, askMeetingQuestion } from './services/geminiService';
-import { getProjects, saveProjects, exportProjectsToFile } from './services/projectService';
-import { saveMeeting, saveMeetingVersion, Meeting, MeetingVersion } from './services/meetingService';
-import { MeetingAnalysis, ProcessingStatus, Project } from './types';
+import { saveMeeting, saveMeetingVersion, Meeting, MeetingVersion, getProjects, Project } from './services/meetingService';
+import { MeetingAnalysis, ProcessingStatus } from './types';
 import { auth } from './firebase';
 import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User, signOut } from 'firebase/auth';
 import { v4 as uuidv4 } from 'uuid';
@@ -24,10 +23,10 @@ const App: React.FC = () => {
   const [language, setLanguage] = useState<string>('English');
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
-  const [showProjectManager, setShowProjectManager] = useState(false);
-  
+  const [showProjects, setShowProjects] = useState(false);
+
   const [currentFiles, setCurrentFiles] = useState<File[]>([]);
-  
+
   // Auth & History State
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
@@ -48,53 +47,44 @@ const App: React.FC = () => {
     try {
       await signInWithPopup(auth, provider);
     } catch (error) {
-      console.error("Login failed", error);
+      console.error('Login failed:', error);
     }
   };
 
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      setShowHistory(false);
     } catch (error) {
-      console.error("Logout failed", error);
+      console.error('Logout failed:', error);
     }
   };
 
-  // Load projects on mount
+  // Load projects when user is logged in
   useEffect(() => {
-    const loaded = getProjects();
-    setProjects(loaded);
-  }, []);
+    if (user) {
+      loadProjects();
+    }
+  }, [user]);
 
-  // Save projects whenever they change
-  useEffect(() => {
-    saveProjects(projects);
-  }, [projects]);
-
-  // Project CRUD
-  const handleAddProject = (project: Project) => {
-    setProjects(prev => [...prev, project]);
-    if (!selectedProjectId) setSelectedProjectId(project.id);
+  const loadProjects = async () => {
+    if (!user) return;
+    try {
+      const loadedProjects = await getProjects(user.uid);
+      setProjects(loadedProjects);
+      // Update selected project if still exists
+      if (selectedProjectId) {
+        const stillExists = loadedProjects.find(p => p.id === selectedProjectId);
+        if (!stillExists) {
+          setSelectedProjectId('');
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load projects:', error);
+    }
   };
 
-  const handleUpdateProject = (project: Project) => {
-    setProjects(prev => prev.map(p => p.id === project.id ? project : p));
-  };
-
-  const handleDeleteProject = (id: string) => {
-    setProjects(prev => prev.filter(p => p.id !== id));
-    if (selectedProjectId === id) setSelectedProjectId('');
-  };
-
-  const handleImportProjects = (newProjects: Project[]) => {
-    // Merge strategies could vary, for now we just append unique IDs or replace.
-    // Let's replace duplicates by ID, append new ones.
-    setProjects(prev => {
-        const map = new Map(prev.map(p => [p.id, p]));
-        newProjects.forEach(p => map.set(p.id, p));
-        return Array.from(map.values());
-    });
+  const handleSelectProject = (project: Project | null) => {
+    setSelectedProjectId(project ? project.id : '');
   };
 
   const handleFilesSelect = async (files: File[]) => {
@@ -389,25 +379,24 @@ const App: React.FC = () => {
                 </div>
 
                 {/* Manage Projects Toggle */}
-                <button 
-                    onClick={() => setShowProjectManager(!showProjectManager)}
-                    className={`text-sm font-medium px-4 py-1.5 rounded-md transition-colors ${showProjectManager ? 'bg-brand-100 text-brand-700' : 'text-slate-500 hover:text-brand-600 hover:bg-slate-50'}`}
+                <button
+                    onClick={() => setShowProjects(!showProjects)}
+                    className={`text-sm font-medium px-4 py-1.5 rounded-md transition-colors ${showProjects ? 'bg-brand-100 text-brand-700' : 'text-slate-500 hover:text-brand-600 hover:bg-slate-50'}`}
                 >
-                    {showProjectManager ? 'Close Manager' : 'Manage Projects'}
+                    {showProjects ? 'Close Projects' : 'Manage Projects'}
                 </button>
               </div>
 
-              {/* Project Manager Component */}
-              <ProjectManager 
-                  isOpen={showProjectManager}
-                  projects={projects}
-                  onAdd={handleAddProject}
-                  onUpdate={handleUpdateProject}
-                  onDelete={handleDeleteProject}
-                  onImport={handleImportProjects}
-                  onExport={() => exportProjectsToFile(projects)}
-                  onClose={() => setShowProjectManager(false)}
-              />
+              {/* Projects Component */}
+              {showProjects && user && (
+                <div className="mt-6">
+                  <Projects
+                    userId={user.uid}
+                    onSelectProject={handleSelectProject}
+                    selectedProjectId={selectedProjectId}
+                  />
+                </div>
+              )}
 
               <Dropzone onFilesSelect={handleFilesSelect} />
               
