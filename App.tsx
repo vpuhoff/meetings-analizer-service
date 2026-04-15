@@ -132,13 +132,17 @@ const App: React.FC = () => {
         const newMeeting: Meeting = {
           id: meetingId,
           userId: user.uid,
-          projectId: selectedProjectId || undefined,
           title: files.map(f => f.name).join(', ') || 'Untitled Meeting',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           techStackTags,
           projectTags
         };
+
+        // Only add projectId if it has a value
+        if (selectedProjectId) {
+          (newMeeting as any).projectId = selectedProjectId;
+        }
         
         const newVersion: MeetingVersion = {
           id: uuidv4(),
