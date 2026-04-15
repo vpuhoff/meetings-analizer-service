@@ -73,12 +73,18 @@ const Projects: React.FC<ProjectsProps> = ({ userId, onSelectProject, selectedPr
         id: isCreating ? uuidv4() : editingProject!.id,
         userId,
         name: formData.name,
-        description: formData.description || undefined,
         context: formData.context,
-        team: formData.team || undefined,
         createdAt: isCreating ? now : editingProject!.createdAt,
         updatedAt: now
       };
+
+      // Only add optional fields if they have values
+      if (formData.description) {
+        (projectData as any).description = formData.description;
+      }
+      if (formData.team) {
+        (projectData as any).team = formData.team;
+      }
 
       await saveProject(projectData);
       setIsCreating(false);
