@@ -226,40 +226,42 @@ const Projects: React.FC<ProjectsProps> = ({ userId, onSelectProject, selectedPr
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {projects.map((project) => (
           <div
             key={project.id}
-            className={`bg-white rounded-xl shadow-sm border p-5 cursor-pointer transition-all hover:shadow-md ${
+            className={`bg-white rounded-xl shadow-sm border-2 p-6 cursor-pointer transition-all hover:shadow-lg hover:scale-105 ${
               selectedProjectId === project.id ? 'border-brand-500 ring-2 ring-brand-200' : 'border-slate-200'
             }`}
             onClick={() => onSelectProject(project)}
           >
-            <div className="flex justify-between items-start mb-2">
-              <h3 className="font-semibold text-slate-800 text-lg">{project.name}</h3>
+            <div className="flex justify-between items-start mb-3">
+              <h3 className="font-bold text-slate-800 text-xl">{project.name}</h3>
               <button
                 onClick={(e) => {
                   e.stopPropagation();
                   handleDelete(project.id);
                 }}
-                className="text-red-500 hover:text-red-700 text-sm"
+                className="text-red-500 hover:text-red-700 hover:bg-red-50 px-2 py-1 rounded text-sm font-medium transition-colors"
               >
                 Delete
               </button>
             </div>
             {project.description && (
-              <p className="text-sm text-slate-600 mb-3">{project.description}</p>
+              <p className="text-sm text-slate-600 mb-4 line-clamp-2">{project.description}</p>
             )}
-            <div className="text-xs text-slate-500">
-              <p className="font-medium mb-1">Context:</p>
-              <p className="line-clamp-2">{project.context}</p>
-            </div>
-            {project.team && (
-              <div className="mt-3 text-xs text-slate-500">
-                <p className="font-medium mb-1">Team:</p>
-                <p>{project.team}</p>
+            <div className="space-y-3">
+              <div className="bg-slate-50 rounded-lg p-3">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Context</p>
+                <p className="text-sm text-slate-700 line-clamp-3">{project.context}</p>
               </div>
-            )}
+              {project.team && (
+                <div className="bg-slate-50 rounded-lg p-3">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Team</p>
+                  <p className="text-sm text-slate-700">{project.team}</p>
+                </div>
+              )}
+            </div>
           </div>
         ))}
       </div>
