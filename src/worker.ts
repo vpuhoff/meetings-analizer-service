@@ -123,8 +123,8 @@ async function analyze(request: Request, env: any) {
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    const MODEL_TRANSCRIPT = "gemini-2.5-flash-preview-04-17";
-    const MODEL_ANALYSIS = "gemini-2.5-flash-preview-04-17";
+    const MODEL_TRANSCRIPT = "gemini-3.1-flash-lite-preview";
+    const MODEL_ANALYSIS = "gemini-3.1-flash-lite-preview";
 
     const contentParts: any[] = [];
     const fullTranscript: Array<{ speaker: string; timestamp: string; text: string }> = [];
@@ -229,7 +229,7 @@ async function question(request: Request, env: any) {
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    const MODEL_REPORT = "gemini-2.5-flash-preview-04-17";
+    const MODEL_REPORT = "gemini-3.1-flash-lite-preview";
 
     const contentParts: any[] = [];
 
@@ -283,7 +283,7 @@ async function markdown(request: Request, env: any) {
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    const MODEL_REPORT = "gemini-2.5-flash-preview-04-17";
+    const MODEL_REPORT = "gemini-3.1-flash-lite-preview";
 
     const prompt = `You are a professional technical writer. Task: Convert the JSON meeting data into a formatted Markdown document. IMPORTANT: Write in ${language || "English"}. Structure: # Meeting Intelligence Report: ${analysis.meetingType} ## Executive Summary ## Action Items (Checkbox list) ## Key Decisions ## Technical Details ## Blockers ## Discussed Topics ## Appendix: Full Transcript Formatting Rules: - Tables MUST be compact. NO empty lines between rows. - STRICTLY DO NOT add blank lines between table rows. - Tables must be continuous blocks of text. - Use standard markdown lists for Action Items. Data: ${JSON.stringify(analysis, null, 2)}`;
 
