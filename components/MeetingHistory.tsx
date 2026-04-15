@@ -74,10 +74,10 @@ const MeetingHistory: React.FC<MeetingHistoryProps> = ({ userId, onOpenReport })
                   {new Date(meeting.createdAt).toLocaleDateString()}
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1">
-                  {(meeting.techStackTags || []).slice(0, 3).map(tag => (
-                    <span key={tag} className="px-1.5 py-0.5 bg-blue-100 text-blue-700 text-[10px] rounded">{tag}</span>
+                  {(meeting.projectTags || []).slice(0, 3).map(tag => (
+                    <span key={tag} className="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] rounded">{tag}</span>
                   ))}
-                  {(meeting.techStackTags || []).length > 3 && <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 text-[10px] rounded">+{(meeting.techStackTags || []).length - 3}</span>}
+                  {(meeting.projectTags || []).length > 3 && <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 text-[10px] rounded">+{(meeting.projectTags || []).length - 3}</span>}
                 </div>
               </li>
             ))}
@@ -91,8 +91,8 @@ const MeetingHistory: React.FC<MeetingHistoryProps> = ({ userId, onOpenReport })
           <div className="p-6">
             <h2 className="text-xl font-bold text-slate-900 mb-2">{selectedMeeting.title}</h2>
             <div className="flex flex-wrap gap-2 mb-6">
-              {(selectedMeeting.projectTags || []).map(tag => (
-                <span key={tag} className="px-2 py-1 bg-purple-100 text-purple-700 text-xs rounded-full">{tag}</span>
+              {(selectedMeeting.techStackTags || []).map(tag => (
+                <span key={tag} className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">{tag}</span>
               ))}
             </div>
             
@@ -117,7 +117,7 @@ const MeetingHistory: React.FC<MeetingHistoryProps> = ({ userId, onOpenReport })
                           <span className="font-medium">Feedback:</span> {version.feedback}
                         </div>
                       )}
-                      <div className="text-sm text-slate-700 line-clamp-2 mb-3">
+                      <div className="text-sm text-slate-700 line-clamp-5 mb-3">
                         {analysis.summary}
                       </div>
                       <button 
