@@ -4,6 +4,7 @@ import { GoogleGenAI, Type, Schema } from "@google/genai";
 const intelligenceSchema: Schema = {
   type: Type.OBJECT,
   properties: {
+    meetingTitle: { type: Type.STRING, description: "Short concise meeting title (5-7 words max)." },
     meetingType: { type: Type.STRING, description: "Meeting category." },
     summary: { type: Type.STRING, description: "3-5 sentence summary." },
     topics: { type: Type.ARRAY, items: { type: Type.STRING } },
@@ -45,7 +46,7 @@ const intelligenceSchema: Schema = {
       },
     },
   },
-  required: ["meetingType", "summary", "topics", "decisions", "actionItems", "techDetails", "projects", "blockers", "transcript"],
+  required: ["meetingTitle", "meetingType", "summary", "topics", "decisions", "actionItems", "techDetails", "projects", "blockers", "transcript"],
 };
 
 // Helper function to parse transcript
@@ -159,7 +160,9 @@ async function analyze(request: Request, env: any) {
       }
     }
 
-    let systemPrompt = `You are a helpful assistant specialized in analyzing meeting recordings. IMPORTANT: Write in ${language || "English"}. Extract and return only valid JSON matching the provided schema. Do not include any conversational text outside the JSON.`;
+    let systemPrompt = `You are a helpful assistant specialized in analyzing meeting recordings. IMPORTANT: Write in ${language || "English"}. Extract and return only valid JSON matching the provided schema. Do not include any conversational text outside the JSON.
+
+For meetingTitle: generate a short, specific title (5-7 words max) that describes the meeting topic, e.g. "Backend API Deployment Planning" or "Sprint 12 Retrospective Review". Do NOT use generic titles like "Meeting" or "Team Sync".`;
 
     if (projectContext) systemPrompt += `\n\nPROJECT CONTEXT:\n${projectContext}`;
     if (teamContext) systemPrompt += `\n\nTEAM MEMBERS:\n${teamContext}`;

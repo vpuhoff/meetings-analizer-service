@@ -136,7 +136,7 @@ const App: React.FC = () => {
         const newMeeting: Meeting = {
           id: meetingId,
           userId: user.uid,
-          title: files.map(f => f.name).join(', ') || 'Untitled Meeting',
+          title: data.meetingTitle || files.map(f => f.name).join(', ') || 'Untitled Meeting',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
           techStackTags,

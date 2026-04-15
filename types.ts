@@ -16,6 +16,7 @@ export interface TranscriptSegment {
 }
 
 export interface MeetingAnalysis {
+  meetingTitle: string;
   meetingType: string;
   summary: string;
   transcript: TranscriptSegment[];

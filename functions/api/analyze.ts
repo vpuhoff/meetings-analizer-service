@@ -4,6 +4,7 @@ import { GoogleGenAI, Type, Schema } from "@google/genai";
 const intelligenceSchema: Schema = {
   type: Type.OBJECT,
   properties: {
+    meetingTitle: { type: Type.STRING, description: "Short concise meeting title (5-7 words max)." },
     meetingType: { type: Type.STRING, description: "Meeting category." },
     summary: { type: Type.STRING, description: "3-5 sentence summary." },
     topics: { type: Type.ARRAY, items: { type: Type.STRING } },
@@ -33,7 +34,7 @@ const intelligenceSchema: Schema = {
     projects: { type: Type.ARRAY, items: { type: Type.STRING } },
     blockers: { type: Type.ARRAY, items: { type: Type.STRING } },
   },
-  required: ["meetingType", "summary", "topics", "decisions", "actionItems", "techDetails", "projects", "blockers"],
+  required: ["meetingTitle", "meetingType", "summary", "topics", "decisions", "actionItems", "techDetails", "projects", "blockers"],
 };
 
 // Helper to parse Transcript
@@ -160,11 +161,12 @@ export async function onRequestPost(context: any) {
     let systemPrompt = `
     You are a Systems Analyst. Analyze the following transcript.
     
-    1. **Meeting Type**: Classify.
-    2. **Action Items**: Extract tasks (Who, What).
-    3. **Decisions**: Agreed points.
-    4. **Tech Details**: Database, APIs, etc.
-    5. **Blockers**: Risks.
+    1. **Meeting Title**: Short specific title (5-7 words max), e.g. "Backend API Deployment Planning". Do NOT use generic titles like "Meeting" or "Team Sync".
+    2. **Meeting Type**: Classify.
+    3. **Action Items**: Extract tasks (Who, What).
+    4. **Decisions**: Agreed points.
+    5. **Tech Details**: Database, APIs, etc.
+    6. **Blockers**: Risks.
     
     IMPORTANT: Output in ${language || "English"}.
     `;
