@@ -20,9 +20,13 @@ const App: React.FC = () => {
   const [processingStep, setProcessingStep] = useState<number>(0);
   
   // Settings
-  const [language, setLanguage] = useState<string>('English');
+  const [language, setLanguage] = useState<string>(() => {
+    return localStorage.getItem('meeting-language') || 'English';
+  });
   const [projects, setProjects] = useState<Project[]>([]);
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(() => {
+    return localStorage.getItem('selected-project-id') || '';
+  });
   const [showProjects, setShowProjects] = useState(false);
 
   const [currentFiles, setCurrentFiles] = useState<File[]>([]);
@@ -86,6 +90,16 @@ const App: React.FC = () => {
   const handleSelectProject = (project: Project | null) => {
     setSelectedProjectId(project ? project.id : '');
   };
+
+  // Save language preference to localStorage
+  useEffect(() => {
+    localStorage.setItem('meeting-language', language);
+  }, [language]);
+
+  // Save selected project to localStorage
+  useEffect(() => {
+    localStorage.setItem('selected-project-id', selectedProjectId);
+  }, [selectedProjectId]);
 
   const handleFilesSelect = async (files: File[]) => {
     setStatus('processing');
