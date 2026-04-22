@@ -112,11 +112,7 @@ async function analyze(request: Request, env: any) {
 
   try {
     const body = await request.json();
-    const { files, language, projectContext, teamContext, feedback } = body;
-
-    if (!files || !Array.isArray(files)) {
-      return new Response(JSON.stringify({ error: "Files array is required" }), { status: 400, headers: { "Content-Type": "application/json" } });
-    }
+    const { transcript, files, language, projectContext, teamContext, feedback } = body;
 
     const apiKey = env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -124,42 +120,66 @@ async function analyze(request: Request, env: any) {
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    const MODEL_TRANSCRIPT = "gemini-3.1-flash-lite-preview";
     const MODEL_ANALYSIS = "gemini-3.1-flash-lite-preview";
 
-    const contentParts: any[] = [];
-    const fullTranscript: Array<{ speaker: string; timestamp: string; text: string }> = [];
+    let fullTranscript: Array<{ speaker: string; timestamp: string; text: string }> = [];
 
-    for (const file of files) {
-      const isAudio = file.type.startsWith('audio') || file.type.startsWith('video');
+    // If transcript is provided from client (new chunked approach), use it
+    if (transcript && Array.isArray(transcript)) {
+      fullTranscript = transcript;
+    } 
+    // Otherwise fallback to old files processing (for backwards compatibility)
+    else if (files && Array.isArray(files)) {
+      const MODEL_TRANSCRIPT = "gemini-2.0-flash";
+      
+      for (const file of files) {
+        const isAudio = file.type.startsWith('audio') || file.type.startsWith('video');
 
-      if (isAudio) {
-        contentParts.push({ inlineData: { mimeType: file.type, data: file.data } });
-
-        // Get transcription
-        const transcriptResponse = await ai.models.generateContent({
-          model: MODEL_TRANSCRIPT,
-          contents: { parts: [{ inlineData: { mimeType: file.type, data: file.data } }] },
-          config: {
-            systemInstruction: "You are a helpful assistant that transcribes audio. Return the transcript in the format [MM:SS] Speaker: text. If no speaker is detected, use 'Speaker 1', 'Speaker 2', etc.",
-            temperature: 0.2
+        if (isAudio) {
+          // Get transcription with retry for timeout
+          let transcriptText = "";
+          let retries = 2;
+          while (retries > 0) {
+            try {
+              const transcriptResponse = await ai.models.generateContent({
+                model: MODEL_TRANSCRIPT,
+                contents: { parts: [{ inlineData: { mimeType: file.type, data: file.data } }] },
+                config: {
+                  systemInstruction: "You are a helpful assistant that transcribes audio. Return the transcript in the format [MM:SS] Speaker: text. If no speaker is detected, use 'Speaker 1', 'Speaker 2', etc.",
+                  temperature: 0.2,
+                  maxOutputTokens: 8192
+                }
+              });
+              transcriptText = transcriptResponse.text || "";
+              break;
+            } catch (e: any) {
+              if (e.message?.includes('524') || e.message?.includes('timeout')) {
+                retries--;
+                if (retries === 0) throw new Error("Transcription timeout - audio file too long. Try splitting into smaller files (< 10 minutes).");
+                await new Promise(r => setTimeout(r, 1000));
+              } else {
+                throw e;
+              }
+            }
           }
-        });
 
-        const transcriptText = transcriptResponse.text;
-        if (!transcriptText) throw new Error("No transcript generated from model.");
+          if (!transcriptText) throw new Error("No transcript generated from model.");
 
-        const segments = parseTranscript(transcriptText);
-        fullTranscript.push(...segments);
-      } else {
-        const textContent = file.content;
-        contentParts.push({ text: `Transcript Context: ${textContent}` });
-
-        const segments = parseTranscript(textContent);
-        fullTranscript.push(...segments);
+          const segments = parseTranscript(transcriptText);
+          fullTranscript.push(...segments);
+        } else {
+          const textContent = file.content;
+          const segments = parseTranscript(textContent);
+          fullTranscript.push(...segments);
+        }
       }
+    } else {
+      return new Response(JSON.stringify({ error: "Either 'transcript' array or 'files' array is required" }), { status: 400, headers: { "Content-Type": "application/json" } });
     }
 
+    // Build content parts for analysis
+    const contentParts: any[] = [];
+    
     let systemPrompt = `You are a helpful assistant specialized in analyzing meeting recordings. IMPORTANT: Write in ${language || "English"}. Extract and return only valid JSON matching the provided schema. Do not include any conversational text outside the JSON.
 
 For meetingTitle: generate a short, specific title (5-7 words max) that describes the meeting topic, e.g. "Backend API Deployment Planning" or "Sprint 12 Retrospective Review". Do NOT use generic titles like "Meeting" or "Team Sync".`;
@@ -304,6 +324,72 @@ async function markdown(request: Request, env: any) {
   }
 }
 
+// Transcribe single audio chunk
+async function transcribe(request: Request, env: any): Promise<Response> {
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: "Method not allowed" }), { status: 405, headers: { "Content-Type": "application/json" } });
+  }
+
+  try {
+    const body = await request.json();
+    const { audio, type, language } = body;
+
+    if (!audio || !type) {
+      return new Response(JSON.stringify({ error: "Audio data and type are required" }), { status: 400, headers: { "Content-Type": "application/json" } });
+    }
+
+    const apiKey = env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return new Response(JSON.stringify({ error: "GEMINI_API_KEY not configured" }), { status: 500, headers: { "Content-Type": "application/json" } });
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
+    const MODEL_TRANSCRIBE = "gemini-2.0-flash";
+
+    const response = await ai.models.generateContent({
+      model: MODEL_TRANSCRIBE,
+      contents: { 
+        parts: [
+          { inlineData: { mimeType: type, data: audio } }
+        ] 
+      },
+      config: {
+        systemInstruction: `You are a helpful assistant that transcribes audio. 
+Return the transcript in the strict format:
+[MM:SS] Speaker Name: The spoken text.
+
+If no speaker is detected, use 'Speaker 1', 'Speaker 2', etc.
+IMPORTANT: The transcript MUST be written in ${language || "English"}.
+If the audio is in a different language, translate it to ${language || "English"}.
+
+Output ONLY the transcript lines. No JSON, no markdown, no explanations.`,
+        temperature: 0.2,
+        maxOutputTokens: 8192
+      }
+    });
+
+    const transcriptText = response.text || "";
+    
+    // Parse transcript into segments
+    const segments = parseTranscript(transcriptText);
+
+    return new Response(JSON.stringify({ 
+      transcript: segments,
+      raw: transcriptText 
+    }), { 
+      status: 200, 
+      headers: { "Content-Type": "application/json" } 
+    });
+
+  } catch (error: any) {
+    console.error("Transcription failed:", error);
+    return new Response(JSON.stringify({ error: error.message || "Transcription failed" }), { 
+      status: 500, 
+      headers: { "Content-Type": "application/json" } 
+    });
+  }
+}
+
 // Main worker with routing
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -336,6 +422,8 @@ export default {
     // Routing
     if (path === "/api/analyze") {
       return withCors(await analyze(request, env));
+    } else if (path === "/api/transcribe") {
+      return withCors(await transcribe(request, env));
     } else if (path === "/api/question") {
       return withCors(await question(request, env));
     } else if (path === "/api/markdown") {

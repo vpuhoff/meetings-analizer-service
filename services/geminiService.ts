@@ -1,6 +1,10 @@
 import { MeetingAnalysis, TranscriptSegment } from "../types";
+import { splitAudioFile, needsChunking, AudioChunk } from "../utils/audioUtils";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
+
+// Constants for chunking
+const MAX_CHUNK_DURATION = 600; // 10 minutes in seconds
 
 // Helper to convert File to Base64
 const fileToBase64 = (file: File): Promise<string> => {
@@ -32,39 +36,85 @@ export const analyzeMeeting = async (
   projectContext?: string, 
   teamContext?: string, 
   feedback?: string, 
-  onProgress?: (step: number) => void
+  onProgress?: (step: number, message?: string) => void
 ): Promise<MeetingAnalysis> => {
   try {
-    if (onProgress) onProgress(0); // Preparing Files
+    if (onProgress) onProgress(0, "Preparing files...");
 
-    // Convert files to format expected by API
-    const filesData = await Promise.all(files.map(async (file) => {
+    // Separate audio and text files
+    const audioFiles: File[] = [];
+    const textFiles: File[] = [];
+    
+    for (const file of files) {
       const isAudio = file.type.startsWith('audio') || file.type.startsWith('video');
-      
       if (isAudio) {
-        const base64Data = await fileToBase64(file);
-        return {
-          type: file.type,
-          data: base64Data,
-        };
+        audioFiles.push(file);
       } else {
-        const textContent = await readTextFile(file);
-        return {
-          type: file.type,
-          content: textContent,
-        };
+        textFiles.push(file);
       }
-    }));
+    }
 
-    if (onProgress) onProgress(1); // Calling API
+    // Process audio files with chunking if needed
+    const allTranscriptSegments: TranscriptSegment[] = [];
+    
+    for (let fileIndex = 0; fileIndex < audioFiles.length; fileIndex++) {
+      const audioFile = audioFiles[fileIndex];
+      
+      if (onProgress) onProgress(1, `Processing audio ${fileIndex + 1}/${audioFiles.length}...`);
+      
+      // Check if file needs chunking
+      if (needsChunking(audioFile, MAX_CHUNK_DURATION)) {
+        // Split into chunks
+        if (onProgress) onProgress(1, `Splitting audio into chunks...`);
+        const chunks = await splitAudioFile(audioFile, (percent) => {
+          if (onProgress) onProgress(1, `Encoding: ${percent}%`);
+        });
+        
+        // Transcribe each chunk
+        for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+          const chunk = chunks[chunkIndex];
+          if (onProgress) onProgress(1, `Transcribing chunk ${chunkIndex + 1}/${chunks.length}...`);
+          
+          const chunkSegments = await transcribeAudioChunk(chunk, language);
+          
+          // Adjust timestamps for this chunk
+          const adjustedSegments = chunkSegments.map(seg => ({
+            ...seg,
+            timestamp: formatTimestamp(parseTimestamp(seg.timestamp) + chunk.startTime)
+          }));
+          
+          allTranscriptSegments.push(...adjustedSegments);
+        }
+      } else {
+        // Process whole file
+        const base64Data = await fileToBase64(audioFile);
+        const segments = await transcribeAudioChunk({
+          blob: new Blob([base64Data], { type: audioFile.type }),
+          index: 0,
+          duration: 0,
+          startTime: 0
+        }, language, base64Data);
+        allTranscriptSegments.push(...segments);
+      }
+    }
 
+    // Process text files
+    for (const textFile of textFiles) {
+      const textContent = await readTextFile(textFile);
+      const segments = parseTranscriptText(textContent);
+      allTranscriptSegments.push(...segments);
+    }
+
+    if (onProgress) onProgress(2, "Analyzing transcript...");
+
+    // Send transcript for analysis
     const response = await fetch(`${API_BASE}/api/analyze`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        files: filesData,
+        transcript: allTranscriptSegments,
         language,
         projectContext,
         teamContext,
@@ -77,11 +127,12 @@ export const analyzeMeeting = async (
       throw new Error(error.error || 'Analysis failed');
     }
 
-    if (onProgress) onProgress(2); // Processing response
+    if (onProgress) onProgress(3, "Finalizing...");
 
     const result = await response.json();
-
-    if (onProgress) onProgress(3); // Finalizing
+    
+    // Add transcript to result
+    result.transcript = allTranscriptSegments;
 
     return result as MeetingAnalysis;
   } catch (error) {
@@ -89,6 +140,91 @@ export const analyzeMeeting = async (
     throw error;
   }
 };
+
+// Helper to transcribe a single audio chunk
+async function transcribeAudioChunk(
+  chunk: AudioChunk | { blob: Blob; index: number; duration: number; startTime: number },
+  language: string,
+  precomputedBase64?: string
+): Promise<TranscriptSegment[]> {
+  const base64Data = precomputedBase64 || await blobToBase64(chunk.blob);
+  
+  const response = await fetch(`${API_BASE}/api/transcribe`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      audio: base64Data,
+      type: chunk.blob.type,
+      language,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json();
+    throw new Error(error.error || 'Transcription failed');
+  }
+
+  const result = await response.json();
+  return result.transcript as TranscriptSegment[];
+}
+
+// Helper to convert blob to base64
+async function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(blob);
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.split(',')[1]);
+    };
+    reader.onerror = reject;
+  });
+}
+
+// Helper to parse transcript text into segments
+function parseTranscriptText(text: string): TranscriptSegment[] {
+  const segments: TranscriptSegment[] = [];
+  const lines = text.split('\n');
+  const regex = /^\[(\d{2}:\d{2})\]\s+([^:]+):\s+(.+)$/;
+  
+  for (const line of lines) {
+    const match = line.trim().match(regex);
+    if (match) {
+      segments.push({
+        timestamp: match[1],
+        speaker: match[2].trim(),
+        text: match[3].trim()
+      });
+    }
+  }
+  
+  return segments;
+}
+
+// Helper to parse timestamp string to seconds
+function parseTimestamp(timestamp: string): number {
+  const parts = timestamp.split(':').map(Number);
+  if (parts.length === 2) {
+    return parts[0] * 60 + parts[1];
+  } else if (parts.length === 3) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+  return 0;
+}
+
+// Helper to format seconds to timestamp string
+function formatTimestamp(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const mins = Math.floor((seconds % 3600) / 60);
+  const secs = Math.floor(seconds % 60);
+  
+  if (hours > 0) {
+    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+  return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+}
 
 export const askMeetingQuestion = async (files: File[], question: string, projectContext?: string, teamContext?: string): Promise<string> => {
   try {
