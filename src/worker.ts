@@ -130,7 +130,7 @@ async function analyze(request: Request, env: any) {
     } 
     // Otherwise fallback to old files processing (for backwards compatibility)
     else if (files && Array.isArray(files)) {
-      const MODEL_TRANSCRIPT = "gemini-2.0-flash";
+      const MODEL_TRANSCRIPT = "gemini-3.1-flash-lite-preview";
       
       for (const file of files) {
         const isAudio = file.type.startsWith('audio') || file.type.startsWith('video');
@@ -344,7 +344,7 @@ async function transcribe(request: Request, env: any): Promise<Response> {
     }
 
     const ai = new GoogleGenAI({ apiKey });
-    const MODEL_TRANSCRIBE = "gemini-2.0-flash";
+    const MODEL_TRANSCRIBE = "gemini-3.1-flash-lite-preview";
 
     const response = await ai.models.generateContent({
       model: MODEL_TRANSCRIBE,
