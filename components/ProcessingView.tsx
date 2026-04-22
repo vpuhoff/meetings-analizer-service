@@ -1,18 +1,11 @@
 import React from 'react';
 
 interface ProcessingViewProps {
-  currentStep: number;
+  percent: number;
+  message: string;
 }
 
-const ProcessingView: React.FC<ProcessingViewProps> = ({ currentStep }) => {
-  
-  const steps = [
-    { label: "Preparing Files", detail: "Reading audio data and preparing for secure transmission" },
-    { label: "Transcribing Audio", detail: "Phase 1: Converting audio segments to text with speaker identification" },
-    { label: "Extracting Intelligence", detail: "Phase 2: Analyzing transcript for decisions, action items, and tech specs" },
-    { label: "Finalizing Report", detail: "Formatting structure and validating JSON output" }
-  ];
-
+const ProcessingView: React.FC<ProcessingViewProps> = ({ percent, message }) => {
   return (
     <div className="max-w-xl mx-auto py-12 px-6 bg-white rounded-2xl shadow-lg border border-slate-100">
       <div className="flex flex-col items-center text-center space-y-6">
@@ -26,30 +19,26 @@ const ProcessingView: React.FC<ProcessingViewProps> = ({ currentStep }) => {
             </div>
         </div>
         
-        <h3 className="text-xl font-semibold text-slate-800 animate-pulse">
+        <h3 className="text-xl font-semibold text-slate-800">
             Processing Meeting Intelligence
         </h3>
 
-        <div className="w-full space-y-4 text-left mt-4">
-            {steps.map((s, idx) => (
-                <div key={idx} className={`flex items-start transition-opacity duration-500 ${idx > currentStep ? 'opacity-30' : 'opacity-100'}`}>
-                    <div className="flex-shrink-0 h-6 w-6 flex items-center justify-center">
-                        {idx < currentStep ? (
-                             <svg className="w-5 h-5 text-green-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                             </svg>
-                        ) : idx === currentStep ? (
-                            <div className="w-2.5 h-2.5 bg-brand-600 rounded-full animate-bounce"></div>
-                        ) : (
-                            <div className="w-2.5 h-2.5 bg-slate-300 rounded-full"></div>
-                        )}
-                    </div>
-                    <div className="ml-3">
-                        <p className={`text-sm font-medium ${idx === currentStep ? 'text-brand-600' : 'text-slate-700'}`}>{s.label}</p>
-                        <p className="text-xs text-slate-500">{s.detail}</p>
-                    </div>
-                </div>
-            ))}
+        {/* Progress Bar */}
+        <div className="w-full space-y-3 mt-4">
+          <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
+            <div 
+              className="bg-brand-600 h-3 rounded-full transition-all duration-500 ease-out"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+          <div className="flex justify-between items-center">
+            <p className="text-sm text-brand-600 font-medium animate-pulse">
+              {message || 'Preparing...'}
+            </p>
+            <span className="text-sm font-bold text-slate-700">
+              {percent}%
+            </span>
+          </div>
         </div>
       </div>
     </div>

@@ -36,11 +36,9 @@ export const analyzeMeeting = async (
   projectContext?: string, 
   teamContext?: string, 
   feedback?: string, 
-  onProgress?: (step: number, message?: string) => void
+  onProgress?: (percent: number, message: string) => void
 ): Promise<MeetingAnalysis> => {
   try {
-    if (onProgress) onProgress(0, "Preparing files...");
-
     // Separate audio and text files
     const audioFiles: File[] = [];
     const textFiles: File[] = [];
@@ -54,28 +52,43 @@ export const analyzeMeeting = async (
       }
     }
 
+    // Calculate total steps: each audio file = 1 transcribe request (or N chunks), 
+    // each text file = 1 read step, +1 for final analysis
+    // Start with a minimum estimate; update total dynamically as we learn actual chunk counts
+    let totalSteps = audioFiles.length + textFiles.length + 1;
+    let completedSteps = 0;
+
+    const reportProgress = (message: string) => {
+      if (onProgress) {
+        const percent = Math.min(100, Math.round((completedSteps / totalSteps) * 100));
+        onProgress(percent, message);
+      }
+    };
+
+    reportProgress("Preparing files...");
+
     // Process audio files with chunking if needed
     const allTranscriptSegments: TranscriptSegment[] = [];
     
     for (let fileIndex = 0; fileIndex < audioFiles.length; fileIndex++) {
       const audioFile = audioFiles[fileIndex];
       
-      if (onProgress) onProgress(1, `Processing audio ${fileIndex + 1}/${audioFiles.length}...`);
-      
-      // Check if file needs chunking
       if (needsChunking(audioFile, MAX_CHUNK_DURATION)) {
         // Split into chunks
-        if (onProgress) onProgress(1, `Splitting audio into chunks...`);
-        const chunks = await splitAudioFile(audioFile, (percent) => {
-          if (onProgress) onProgress(1, `Encoding: ${percent}%`);
-        });
+        reportProgress(`Splitting audio ${fileIndex + 1}/${audioFiles.length}...`);
+        const chunks = await splitAudioFile(audioFile);
         
+        // Update total: replace 1 estimated step with actual chunk count
+        totalSteps += (chunks.length - 1);
+
         // Transcribe each chunk
         for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
           const chunk = chunks[chunkIndex];
-          if (onProgress) onProgress(1, `Transcribing chunk ${chunkIndex + 1}/${chunks.length}...`);
+          reportProgress(`Transcribing file ${fileIndex + 1}/${audioFiles.length}, chunk ${chunkIndex + 1}/${chunks.length}...`);
           
           const chunkSegments = await transcribeAudioChunk(chunk, language);
+          completedSteps++;
+          reportProgress(`Transcribed file ${fileIndex + 1}/${audioFiles.length}, chunk ${chunkIndex + 1}/${chunks.length}`);
           
           // Adjust timestamps for this chunk
           const adjustedSegments = chunkSegments.map(seg => ({
@@ -87,6 +100,7 @@ export const analyzeMeeting = async (
         }
       } else {
         // Process whole file
+        reportProgress(`Transcribing file ${fileIndex + 1}/${audioFiles.length}...`);
         const base64Data = await fileToBase64(audioFile);
         const segments = await transcribeAudioChunk({
           blob: new Blob([base64Data], { type: audioFile.type }),
@@ -94,18 +108,23 @@ export const analyzeMeeting = async (
           duration: 0,
           startTime: 0
         }, language, base64Data);
+        completedSteps++;
+        reportProgress(`Transcribed file ${fileIndex + 1}/${audioFiles.length}`);
         allTranscriptSegments.push(...segments);
       }
     }
 
     // Process text files
     for (const textFile of textFiles) {
+      reportProgress(`Reading ${textFile.name}...`);
       const textContent = await readTextFile(textFile);
       const segments = parseTranscriptText(textContent);
       allTranscriptSegments.push(...segments);
+      completedSteps++;
+      reportProgress(`Read ${textFile.name}`);
     }
 
-    if (onProgress) onProgress(2, "Analyzing transcript...");
+    reportProgress("Analyzing transcript...");
 
     // Send transcript for analysis
     const response = await fetch(`${API_BASE}/api/analyze`, {
@@ -127,7 +146,8 @@ export const analyzeMeeting = async (
       throw new Error(error.error || 'Analysis failed');
     }
 
-    if (onProgress) onProgress(3, "Finalizing...");
+    completedSteps++;
+    reportProgress("Finalizing report...");
 
     const result = await response.json();
     

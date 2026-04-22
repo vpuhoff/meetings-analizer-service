@@ -17,7 +17,8 @@ const App: React.FC = () => {
   const [status, setStatus] = useState<ProcessingStatus>('idle');
   const [result, setResult] = useState<MeetingAnalysis | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [processingStep, setProcessingStep] = useState<number>(0);
+  const [progressPercent, setProgressPercent] = useState<number>(0);
+  const [progressMessage, setProgressMessage] = useState<string>('');
   
   // Settings
   const [language, setLanguage] = useState<string>(() => {
@@ -103,7 +104,8 @@ const App: React.FC = () => {
 
   const handleFilesSelect = async (files: File[]) => {
     setStatus('processing');
-    setProcessingStep(0);
+    setProgressPercent(0);
+    setProgressMessage('');
     setErrorMsg(null);
     setCurrentFiles(files);
     
@@ -119,7 +121,10 @@ const App: React.FC = () => {
         context, 
         team, 
         undefined, 
-        (step) => setProcessingStep(step)
+        (percent, message) => {
+          setProgressPercent(percent);
+          setProgressMessage(message);
+        }
       );
       
       setResult(data);
@@ -181,7 +186,8 @@ const App: React.FC = () => {
     if (filesToAnalyze.length === 0) return;
 
     setStatus('processing');
-    setProcessingStep(0);
+    setProgressPercent(0);
+    setProgressMessage('');
     setErrorMsg(null);
 
     try {
@@ -195,7 +201,10 @@ const App: React.FC = () => {
             context, 
             team, 
             feedback,
-            (step) => setProcessingStep(step)
+            (percent, message) => {
+              setProgressPercent(percent);
+              setProgressMessage(message);
+            }
         );
         setResult(data);
         setStatus('completed');
@@ -252,7 +261,8 @@ const App: React.FC = () => {
     setResult(null);
     setErrorMsg(null);
     setCurrentFiles([]);
-    setProcessingStep(0);
+    setProgressPercent(0);
+    setProgressMessage('');
     setCurrentMeetingId(null);
   };
 
@@ -434,7 +444,7 @@ const App: React.FC = () => {
 
         {status === 'processing' && (
           <div className="mt-10">
-            <ProcessingView currentStep={processingStep} />
+            <ProcessingView percent={progressPercent} message={progressMessage} />
           </div>
         )}
 
