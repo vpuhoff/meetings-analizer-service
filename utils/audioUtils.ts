@@ -71,16 +71,21 @@ export async function splitAudioFile(
  */
 async function encodeToMp3(audioBuffer: AudioBuffer): Promise<Blob> {
   // Dynamic import lamejs to avoid SSR issues
-  const lamejs = await import('lamejs');
+  const lamejsModule = await import('lamejs');
+  const Mp3Encoder = (lamejsModule as any).Mp3Encoder || (lamejsModule as any).default?.Mp3Encoder;
+  
+  if (!Mp3Encoder) {
+    throw new Error('lamejs Mp3Encoder not available');
+  }
   
   const channels = audioBuffer.numberOfChannels;
   const sampleRate = audioBuffer.sampleRate;
-  const mp3encoder = new (lamejs as any).Mp3Encoder(channels, sampleRate, 128);
+  const mp3encoder = new Mp3Encoder(channels, sampleRate, 128);
   
   const mp3Data: Uint8Array[] = [];
   const sampleBlockSize = 1152;
   
-  // Process each channel
+  // Process audio data in blocks
   for (let i = 0; i < audioBuffer.length; i += sampleBlockSize) {
     const leftChannel = audioBuffer.getChannelData(0);
     const rightChannel = channels > 1 ? audioBuffer.getChannelData(1) : leftChannel;
@@ -91,8 +96,14 @@ async function encodeToMp3(audioBuffer: AudioBuffer): Promise<Blob> {
       ? float32ToInt16(rightChannel.subarray(i, i + sampleBlockSize))
       : leftChunk;
     
-    // Encode
-    const mp3buf = mp3encoder.encodeBuffer(leftChunk, rightChunk);
+    // Encode based on channels
+    let mp3buf: Uint8Array;
+    if (channels > 1) {
+      mp3buf = mp3encoder.encodeBuffer(leftChunk, rightChunk);
+    } else {
+      mp3buf = mp3encoder.encodeBuffer(leftChunk);
+    }
+    
     if (mp3buf.length > 0) {
       mp3Data.push(mp3buf);
     }
