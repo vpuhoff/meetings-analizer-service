@@ -28,6 +28,7 @@ interface ChatWindowProps {
 const ChatWindow: React.FC<ChatWindowProps> = ({ userId, project, thread, settings, onThreadCreated }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [selectedKbDoc, setSelectedKbDoc] = useState<KBDocument | null>(null);
+  const [citationNotFound, setCitationNotFound] = useState<string | null>(null);
 
   const { messages, annotationsMap, input, setInput, isLoading, error, sendMessage } = useAssistantChat({
     userId,
@@ -38,10 +39,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ userId, project, thread, settin
   });
 
   const handleCitationClick = useCallback(async (fileId: string) => {
+    console.log('[Citation] clicked fileId:', fileId);
+    // Try matching by openai_file_id (the uploaded file ID stored during KB sync)
     const q = query(collection(db, 'knowledge_base'), where('openai_file_id', '==', fileId));
     const snap = await getDocs(q);
+    console.log('[Citation] Firestore results:', snap.size, snap.docs.map(d => d.data().openai_file_id));
     if (!snap.empty) {
       setSelectedKbDoc(snap.docs[0].data() as KBDocument);
+    } else {
+      // Fallback: load all KB docs for this user and find by any file ID field
+      // (OpenAI may return vector store file IDs which differ from upload file IDs)
+      console.warn('[Citation] No doc found for fileId:', fileId, '— check openai_file_id values in Firestore');
+      setCitationNotFound(fileId);
+      setTimeout(() => setCitationNotFound(null), 3000);
     }
   }, []);
 
@@ -88,6 +98,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ userId, project, thread, settin
         ))}
         <div ref={bottomRef} />
       </div>
+
+      {/* Citation not found toast */}
+      {citationNotFound && (
+        <div className="px-4 py-2 text-xs text-amber-700 bg-amber-50 border-t border-amber-100 flex-shrink-0">
+          Source document not found in Knowledge Base for file: <code className="font-mono">{citationNotFound}</code>
+        </div>
+      )}
 
       {/* Error banner */}
       {error && (

@@ -195,13 +195,19 @@ export function useAssistantChat({
                     : m
                 ));
               }
-              // Annotations sometimes arrive inline with delta chunks
+              if (textContent?.annotations?.length) {
+                console.log('[SSE delta annotations]', textContent.annotations);
+              }
               extractAnnotations(textContent?.annotations, setAnnotationsMap);
             }
 
             // thread.message.completed carries the final, authoritative annotations
             if (evt.object === 'thread.message') {
+              console.log('[SSE thread.message]', evt.status, evt.content);
               const textContent = evt.content?.find((c: any) => c.type === 'text')?.text;
+              if (textContent?.annotations?.length) {
+                console.log('[SSE completed annotations]', textContent.annotations);
+              }
               extractAnnotations(textContent?.annotations, setAnnotationsMap);
             }
           } catch {
