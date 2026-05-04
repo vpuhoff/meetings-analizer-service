@@ -2,8 +2,6 @@
 
 AI-powered meeting analysis platform that transcribes, summarizes, and extracts insights from meeting recordings and transcripts — and builds a searchable corporate Knowledge Base from them.
 
-**Live app:** https://gen-lang-client-0937773369.web.app
-
 ---
 
 ## Features
