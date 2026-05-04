@@ -11,6 +11,8 @@
   },
   "dependencies": {
     "@google/genai": "^1.38.0",
+    "ag-grid-community": "^35.2.1",
+    "ag-grid-react": "^35.2.1",
     "buffer": "^6.0.3",
     "cors": "^2.8.6",
     "express": "^5.2.1",

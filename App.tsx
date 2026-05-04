@@ -433,8 +433,8 @@ const App: React.FC = () => {
           />
         </div>
       ) : activeTab === 'knowledge' && user ? (
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 animate-fade-in-up">
-          <KnowledgeBase />
+        <div className="px-4 sm:px-6 lg:px-8 pt-8 animate-fade-in-up">
+          <KnowledgeBase userId={user.uid} />
         </div>
       ) : (
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-10">

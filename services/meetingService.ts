@@ -1,4 +1,4 @@
-import { collection, doc, setDoc, getDocs, getDoc, query, where, orderBy, deleteDoc, onSnapshot } from 'firebase/firestore';
+import { collection, doc, setDoc, getDocs, getDoc, query, where, orderBy, deleteDoc, onSnapshot, Unsubscribe } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 import { MeetingAnalysis } from '../types';
 
@@ -193,5 +193,47 @@ export async function saveUserSettings(settings: UserSettings) {
     await setDoc(doc(db, 'userSettings', settings.userId), settings, { merge: true });
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+// Knowledge Base
+export interface KBDocument {
+  id: string;
+  userId: string;
+  meeting_id: string;
+  project_id: string;
+  project_name?: string;
+  title: string;
+  content: string;
+  systems: string[];
+  topics: string[];
+  sync_status: 'synced' | 'pending' | 'out_of_sync';
+  openai_file_id: string | null;
+  created_at: number;
+  updated_at: number;
+}
+
+export function subscribeKBDocuments(userId: string, onChange: (docs: KBDocument[]) => void): Unsubscribe {
+  const q = query(collection(db, 'knowledge_base'), where('userId', '==', userId), orderBy('updated_at', 'desc'));
+  return onSnapshot(q, (snap) => {
+    onChange(snap.docs.map(d => d.data() as KBDocument));
+  });
+}
+
+export async function saveKBDocument(doc_: KBDocument) {
+  const path = `knowledge_base/${doc_.id}`;
+  try {
+    await setDoc(doc(db, 'knowledge_base', doc_.id), doc_, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function deleteKBDocument(docId: string) {
+  const path = `knowledge_base/${docId}`;
+  try {
+    await deleteDoc(doc(db, 'knowledge_base', docId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
