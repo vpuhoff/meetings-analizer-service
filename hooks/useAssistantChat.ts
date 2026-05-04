@@ -43,9 +43,18 @@ export function useAssistantChat({
   // Track the active OpenAI thread ID across the lifetime of this hook instance
   const activeThreadIdRef = useRef<string | null>(thread?.openai_thread_id ?? null);
 
-  // When the user picks a different thread from the sidebar, reset the chat
+  // When the user picks a DIFFERENT existing thread from the sidebar, reset the chat.
+  // We must NOT reset when a new thread is created and propagated back as a prop —
+  // that case is detected by checking whether the new thread id matches what we
+  // already set in activeThreadIdRef during sendMessage.
   useEffect(() => {
-    activeThreadIdRef.current = thread?.openai_thread_id ?? null;
+    const incomingOaiId = thread?.openai_thread_id ?? null;
+    if (incomingOaiId !== null && incomingOaiId === activeThreadIdRef.current) {
+      // This is the thread we just created — don't reset messages
+      return;
+    }
+    // Genuinely different thread selected from sidebar (or cleared to null)
+    activeThreadIdRef.current = incomingOaiId;
     setMessages([]);
     setError(null);
   }, [thread?.id]);
