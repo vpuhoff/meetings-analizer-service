@@ -342,7 +342,7 @@ ${transcriptText}
 
   try {
     const parsed = JSON.parse(jsonStr) as KBGenerationResult;
-    // Fix double-escaped newlines: model sometimes writes \\n instead of \n
+    // Fix literal \n sequences (two chars: backslash + n) left by model
     if (typeof parsed.content === 'string') {
       parsed.content = parsed.content.replace(/\\n/g, '\n');
     }

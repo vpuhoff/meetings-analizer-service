@@ -23,8 +23,12 @@ interface KBEditorModalProps {
   onSave: (updated: KBDocument) => Promise<void>;
 }
 
+function normalizeContent(s: string): string {
+  return s.replace(/\\n/g, '\n');
+}
+
 const KBEditorModal: React.FC<KBEditorModalProps> = ({ doc, onClose, onSave }) => {
-  const [markdown, setMarkdown] = useState(doc.content);
+  const [markdown, setMarkdown] = useState(() => normalizeContent(doc.content));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

@@ -26,6 +26,10 @@ const syncBadge = (status: KBDocument['sync_status']) => {
   return <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${s.cls}`}>{s.label}</span>;
 };
 
+function normalizeContent(s: string): string {
+  return s.replace(/\\n/g, '\n');
+}
+
 const KBViewModal: React.FC<KBViewModalProps> = ({ doc, onClose, onEdit }) => {
   return (
     <div
@@ -66,7 +70,7 @@ const KBViewModal: React.FC<KBViewModalProps> = ({ doc, onClose, onEdit }) => {
         <div className="flex-1 overflow-y-auto">
           <MDXEditor
             key={doc.id}
-            markdown={doc.content}
+            markdown={normalizeContent(doc.content)}
             readOnly
             plugins={[
               headingsPlugin(),
