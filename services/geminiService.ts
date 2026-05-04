@@ -341,7 +341,12 @@ ${transcriptText}
   const jsonStr = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
 
   try {
-    return JSON.parse(jsonStr) as KBGenerationResult;
+    const parsed = JSON.parse(jsonStr) as KBGenerationResult;
+    // Fix double-escaped newlines: model sometimes writes \\n instead of \n
+    if (typeof parsed.content === 'string') {
+      parsed.content = parsed.content.replace(/\\n/g, '\n');
+    }
+    return parsed;
   } catch {
     throw new Error('Model returned invalid JSON. Raw: ' + raw.slice(0, 300));
   }
