@@ -44,6 +44,7 @@ const App: React.FC = () => {
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [activeTab, setActiveTab] = useState<'extract' | 'history' | 'projects' | 'ask-ai' | 'knowledge'>('extract');
   const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null);
+  const [currentMeetingDate, setCurrentMeetingDate] = useState<number>(Date.now());
 
   // Close user menu on outside click
   useEffect(() => {
@@ -162,6 +163,8 @@ const App: React.FC = () => {
       if (user) {
         const meetingId = uuidv4();
         setCurrentMeetingId(meetingId);
+        const meetingCreatedAt = new Date().toISOString();
+        setCurrentMeetingDate(new Date(meetingCreatedAt).getTime());
         
         const techStackTags = data.techDetails || [];
         const projectTags = data.projects || [];
@@ -170,7 +173,7 @@ const App: React.FC = () => {
           id: meetingId,
           userId: user.uid,
           title: data.meetingTitle || files.map(f => f.name).join(', ') || 'Untitled Meeting',
-          createdAt: new Date().toISOString(),
+          createdAt: meetingCreatedAt,
           updatedAt: new Date().toISOString(),
           techStackTags,
           projectTags
@@ -298,6 +301,7 @@ const App: React.FC = () => {
   const handleSaveToKB = async () => {
     if (!result || !user) throw new Error('No meeting data');
     const project = projects.find(p => p.id === selectedProjectId);
+    const meetingDate = currentMeetingDate;
     const kbResult = await generateKBDocument(
       result,
       project?.name || '',
@@ -316,15 +320,16 @@ const App: React.FC = () => {
       topics: kbResult.topics,
       sync_status: 'out_of_sync',
       openai_file_id: null,
-      created_at: Date.now(),
+      created_at: meetingDate,
       updated_at: Date.now(),
     };
     await saveKBDocument(doc);
   };
 
-  const handleOpenHistoryReport = (analysis: MeetingAnalysis, meetingId: string) => {
+  const handleOpenHistoryReport = (analysis: MeetingAnalysis, meetingId: string, meetingDate?: string) => {
     setResult(analysis);
     setCurrentMeetingId(meetingId);
+    setCurrentMeetingDate(meetingDate ? new Date(meetingDate).getTime() : Date.now());
     setStatus('completed');
     setActiveTab('extract');
   };

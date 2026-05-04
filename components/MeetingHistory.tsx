@@ -4,7 +4,7 @@ import { MeetingAnalysis } from '../types';
 
 interface MeetingHistoryProps {
   userId: string;
-  onOpenReport: (analysis: MeetingAnalysis, meetingId: string) => void;
+  onOpenReport: (analysis: MeetingAnalysis, meetingId: string, meetingDate?: string) => void;
 }
 
 const MeetingHistory: React.FC<MeetingHistoryProps> = ({ userId, onOpenReport }) => {
@@ -216,7 +216,7 @@ const MeetingHistory: React.FC<MeetingHistoryProps> = ({ userId, onOpenReport })
                         {analysis.summary}
                       </div>
                       <button 
-                        onClick={() => onOpenReport(analysis, selectedMeeting.id)}
+                        onClick={() => onOpenReport(analysis, selectedMeeting.id, selectedMeeting.createdAt)}
                         className="text-sm text-brand-600 font-medium hover:text-brand-700 flex items-center"
                       >
                         Open Report
