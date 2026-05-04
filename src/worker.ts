@@ -505,12 +505,13 @@ async function assistant(request: Request, env: any) {
   try {
     const body = await request.json() as {
       message: string;
-      openai_thread_id?: string | null;
+      threadId?: string | null;
       assistant_id: string;
       openai_api_key: string;
+      vectorStoreId?: string | null;
     };
 
-    const { message, openai_thread_id, assistant_id, openai_api_key } = body;
+    const { message, threadId: incomingThreadId, assistant_id, openai_api_key, vectorStoreId } = body;
 
     if (!openai_api_key) {
       return new Response(JSON.stringify({ error: 'openai_api_key is required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
@@ -526,24 +527,36 @@ async function assistant(request: Request, env: any) {
       'OpenAI-Beta': 'assistants=v2',
     };
 
-    // 1. Create or reuse thread
-    let threadId = openai_thread_id;
+    // 1. Create new thread OR reuse existing
+    let threadId = incomingThreadId;
     if (!threadId) {
-      const threadRes = await fetch(`${oaiBase}/threads`, { method: 'POST', headers: oaiHeaders, body: '{}' });
+      const threadPayload: Record<string, unknown> = {
+        messages: [{ role: 'user', content: message }],
+      };
+      if (vectorStoreId) {
+        threadPayload.tool_resources = {
+          file_search: { vector_store_ids: [vectorStoreId] },
+        };
+      }
+      const threadRes = await fetch(`${oaiBase}/threads`, {
+        method: 'POST',
+        headers: oaiHeaders,
+        body: JSON.stringify(threadPayload),
+      });
       if (!threadRes.ok) throw new Error(`Failed to create thread: ${await threadRes.text()}`);
       const thread = await threadRes.json() as { id: string };
       threadId = thread.id;
+    } else {
+      // Existing thread: add the message separately
+      const msgRes = await fetch(`${oaiBase}/threads/${threadId}/messages`, {
+        method: 'POST',
+        headers: oaiHeaders,
+        body: JSON.stringify({ role: 'user', content: message }),
+      });
+      if (!msgRes.ok) throw new Error(`Failed to add message: ${await msgRes.text()}`);
     }
 
-    // 2. Add user message to thread
-    const msgRes = await fetch(`${oaiBase}/threads/${threadId}/messages`, {
-      method: 'POST',
-      headers: oaiHeaders,
-      body: JSON.stringify({ role: 'user', content: message }),
-    });
-    if (!msgRes.ok) throw new Error(`Failed to add message: ${await msgRes.text()}`);
-
-    // 3. Stream the run
+    // 2. Create streaming run
     const runRes = await fetch(`${oaiBase}/threads/${threadId}/runs`, {
       method: 'POST',
       headers: oaiHeaders,
@@ -551,58 +564,14 @@ async function assistant(request: Request, env: any) {
     });
     if (!runRes.ok) throw new Error(`Failed to start run: ${await runRes.text()}`);
 
-    // 4. Pipe SSE stream back, injecting thread_id as first event
-    const { readable, writable } = new TransformStream();
-    const writer = writable.getWriter();
-    const encoder = new TextEncoder();
-
-    // Send thread_id first so client can save it
-    writer.write(encoder.encode(`data: ${JSON.stringify({ type: 'thread_id', thread_id: threadId })}\n\n`));
-
-    // Pipe OpenAI SSE stream
-    (async () => {
-      const reader = runRes.body!.getReader();
-      const decoder = new TextDecoder();
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          // Forward all SSE lines
-          for (const line of chunk.split('\n')) {
-            if (!line.startsWith('data: ')) continue;
-            const raw = line.slice(6).trim();
-            if (raw === '[DONE]') {
-              writer.write(encoder.encode('data: [DONE]\n\n'));
-              break;
-            }
-            try {
-              const evt = JSON.parse(raw);
-              // Extract delta text for text_delta events
-              if (evt.object === 'thread.message.delta') {
-                const delta = evt.delta?.content?.[0]?.text?.value ?? '';
-                if (delta) {
-                  writer.write(encoder.encode(`data: ${JSON.stringify({ type: 'delta', text: delta })}\n\n`));
-                }
-              } else if (evt.object === 'thread.run' && (evt.status === 'completed' || evt.status === 'failed' || evt.status === 'cancelled')) {
-                writer.write(encoder.encode(`data: ${JSON.stringify({ type: 'done', status: evt.status })}\n\n`));
-              }
-            } catch {
-              // skip non-JSON lines
-            }
-          }
-        }
-      } finally {
-        writer.close();
-      }
-    })();
-
-    return new Response(readable, {
+    // 3. Pipe OpenAI SSE body directly — add X-Thread-Id so client can save it
+    return new Response(runRes.body, {
       status: 200,
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
+        'X-Thread-Id': threadId,
+        'Access-Control-Expose-Headers': 'X-Thread-Id',
       },
     });
 
@@ -616,6 +585,7 @@ const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
+  "Access-Control-Expose-Headers": "X-Thread-Id",
 };
 
 function withCors(response: Response): Response {
