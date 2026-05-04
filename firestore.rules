@@ -129,5 +129,9 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isValidProject(request.resource.data) && uidUnchanged();
       allow update: if isAuthenticated() && isDocOwner() && isValidProject(request.resource.data) && uidNotModified();
     }
+
+    match /userSettings/{userId} {
+      allow read, write: if isAuthenticated() && request.auth.uid == userId;
+    }
   }
 }

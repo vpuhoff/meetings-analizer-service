@@ -167,3 +167,31 @@ export async function deleteProject(projectId: string) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
 }
+
+// User Settings
+export interface UserSettings {
+  userId: string;
+  openaiApiKey?: string;
+  autoSaveToIndex?: boolean;
+  updatedAt: string;
+}
+
+export async function getUserSettings(userId: string): Promise<UserSettings | null> {
+  const path = `userSettings/${userId}`;
+  try {
+    const snap = await getDoc(doc(db, 'userSettings', userId));
+    return snap.exists() ? (snap.data() as UserSettings) : null;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+    return null;
+  }
+}
+
+export async function saveUserSettings(settings: UserSettings) {
+  const path = `userSettings/${settings.userId}`;
+  try {
+    await setDoc(doc(db, 'userSettings', settings.userId), settings, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
