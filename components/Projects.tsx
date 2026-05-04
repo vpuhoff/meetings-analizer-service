@@ -237,15 +237,26 @@ const Projects: React.FC<ProjectsProps> = ({ userId, onSelectProject, selectedPr
           >
             <div className="flex justify-between items-start mb-3">
               <h3 className="font-bold text-slate-800 text-xl">{project.name}</h3>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDelete(project.id);
-                }}
-                className="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded text-sm font-medium transition-colors"
-              >
-                Delete
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleEdit(project);
+                  }}
+                  className="text-brand-600 hover:text-brand-800 hover:bg-brand-50 px-3 py-1.5 rounded text-sm font-medium transition-colors"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    handleDelete(project.id);
+                  }}
+                  className="text-red-500 hover:text-red-700 hover:bg-red-50 px-3 py-1.5 rounded text-sm font-medium transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
             </div>
             {project.description && (
               <p className="text-sm text-slate-600 mb-4 line-clamp-2">{project.description}</p>
