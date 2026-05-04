@@ -1,11 +1,14 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { collection, query, where, getDocs } from 'firebase/firestore';
+import { db } from '../firebase';
 import { Project } from '../types';
 import {
-  ChatThread, UserSettings,
+  ChatThread, UserSettings, KBDocument,
   getUserSettings, getChatThreads, deleteChatThread,
 } from '../services/meetingService';
 import { useAssistantChat } from '../hooks/useAssistantChat';
+import ChatMessage from './ChatMessage';
 
 // ── Props ───────────────────────────────────────────────────────────
 interface AskAIProps {
@@ -24,14 +27,23 @@ interface ChatWindowProps {
 
 const ChatWindow: React.FC<ChatWindowProps> = ({ userId, project, thread, settings, onThreadCreated }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const [selectedKbDoc, setSelectedKbDoc] = useState<KBDocument | null>(null);
 
-  const { messages, input, setInput, isLoading, error, sendMessage } = useAssistantChat({
+  const { messages, annotationsMap, input, setInput, isLoading, error, sendMessage } = useAssistantChat({
     userId,
     project,
     thread,
     settings,
     onThreadCreated,
   });
+
+  const handleCitationClick = useCallback(async (fileId: string) => {
+    const q = query(collection(db, 'knowledge_base'), where('openai_file_id', '==', fileId));
+    const snap = await getDocs(q);
+    if (!snap.empty) {
+      setSelectedKbDoc(snap.docs[0].data() as KBDocument);
+    }
+  }, []);
 
   // Auto-scroll
   useEffect(() => {
@@ -67,29 +79,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ userId, project, thread, settin
         )}
 
         {messages.map(msg => (
-          <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-            <div className={`max-w-[80%] rounded-2xl px-4 py-3 text-sm ${
-              msg.role === 'user'
-                ? 'bg-brand-600 text-white rounded-br-sm'
-                : 'bg-white border border-slate-200 text-slate-800 rounded-bl-sm shadow-sm'
-            }`}>
-              {msg.role === 'assistant' ? (
-                <div className="prose prose-sm prose-slate max-w-none">
-                  {msg.content ? (
-                    <ReactMarkdown>{msg.content}</ReactMarkdown>
-                  ) : (
-                    <span className="inline-flex gap-1 py-1">
-                      <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                    </span>
-                  )}
-                </div>
-              ) : (
-                <p className="whitespace-pre-wrap">{msg.content}</p>
-              )}
-            </div>
-          </div>
+          <ChatMessage
+            key={msg.id}
+            message={msg}
+            annotationsMap={annotationsMap}
+            onCitationClick={handleCitationClick}
+          />
         ))}
         <div ref={bottomRef} />
       </div>
@@ -130,6 +125,45 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ userId, project, thread, settin
           )}
         </button>
       </div>
+      {/* KB Source Drawer */}
+      {selectedKbDoc && (
+        <div className="fixed inset-0 z-50 flex justify-end" onClick={() => setSelectedKbDoc(null)}>
+          <div
+            className="relative w-full max-w-lg h-full bg-white shadow-2xl border-l border-slate-200 flex flex-col overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 flex-shrink-0">
+              <div>
+                <p className="text-xs text-slate-400 font-medium uppercase tracking-wide mb-0.5">Knowledge Base Source</p>
+                <h3 className="font-semibold text-slate-800 text-base leading-snug">{selectedKbDoc.title}</h3>
+              </div>
+              <button
+                onClick={() => setSelectedKbDoc(null)}
+                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4">
+              <div className="prose prose-sm prose-slate max-w-none">
+                <ReactMarkdown>{selectedKbDoc.content}</ReactMarkdown>
+              </div>
+            </div>
+            {(selectedKbDoc.systems?.length > 0 || selectedKbDoc.topics?.length > 0) && (
+              <div className="px-5 py-3 border-t border-slate-100 flex flex-wrap gap-1.5 flex-shrink-0">
+                {selectedKbDoc.systems?.map(s => (
+                  <span key={s} className="px-2 py-0.5 text-xs rounded-full bg-blue-50 text-blue-700 border border-blue-100">{s}</span>
+                ))}
+                {selectedKbDoc.topics?.map(t => (
+                  <span key={t} className="px-2 py-0.5 text-xs rounded-full bg-purple-50 text-purple-700 border border-purple-100">{t}</span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

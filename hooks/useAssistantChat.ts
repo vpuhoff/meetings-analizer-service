@@ -19,6 +19,7 @@ interface UseAssistantChatOptions {
 
 interface UseAssistantChatReturn {
   messages: ChatMessage[];
+  annotationsMap: Record<string, string>;
   input: string;
   setInput: (v: string) => void;
   isLoading: boolean;
@@ -36,6 +37,7 @@ export function useAssistantChat({
   onThreadCreated,
 }: UseAssistantChatOptions): UseAssistantChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [annotationsMap, setAnnotationsMap] = useState<Record<string, string>>({});
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +58,7 @@ export function useAssistantChat({
     // Genuinely different thread selected from sidebar (or cleared to null)
     activeThreadIdRef.current = incomingOaiId;
     setMessages([]);
+    setAnnotationsMap({});
     setError(null);
   }, [thread?.id]);
 
@@ -143,13 +146,27 @@ export function useAssistantChat({
             const evt = JSON.parse(raw);
             // OpenAI v2 SSE: object === 'thread.message.delta'
             if (evt.object === 'thread.message.delta') {
-              const delta: string = evt.delta?.content?.[0]?.text?.value ?? '';
+              const textContent = evt.delta?.content?.[0]?.text;
+              const delta: string = textContent?.value ?? '';
               if (delta) {
                 setMessages(prev => prev.map(m =>
                   m.id === assistantMsgId
                     ? { ...m, content: m.content + delta }
                     : m
                 ));
+              }
+              // Extract file_citation annotations: map marker → file_id
+              const annotations: any[] = textContent?.annotations ?? [];
+              if (annotations.length > 0) {
+                const newEntries: Record<string, string> = {};
+                for (const ann of annotations) {
+                  if (ann.type === 'file_citation' && ann.text && ann.file_citation?.file_id) {
+                    newEntries[ann.text] = ann.file_citation.file_id;
+                  }
+                }
+                if (Object.keys(newEntries).length > 0) {
+                  setAnnotationsMap(prev => ({ ...prev, ...newEntries }));
+                }
               }
             }
           } catch {
@@ -170,5 +187,5 @@ export function useAssistantChat({
     }
   }, [input, isLoading, settings, project, userId, onThreadCreated]);
 
-  return { messages, input, setInput, isLoading, error, sendMessage };
+  return { messages, annotationsMap, input, setInput, isLoading, error, sendMessage };
 }
