@@ -591,6 +591,46 @@ async function assistant(request: Request, env: any) {
   }
 }
 
+// Load thread message history from OpenAI
+async function assistantMessages(request: Request) {
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
+  }
+  try {
+    const body = await request.json() as {
+      threadId: string;
+      openai_api_key: string;
+    };
+    const { threadId, openai_api_key } = body;
+    if (!threadId || !openai_api_key) {
+      return new Response(JSON.stringify({ error: 'threadId and openai_api_key are required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    const res = await fetch(`https://api.openai.com/v1/threads/${threadId}/messages?limit=100&order=asc`, {
+      headers: {
+        'Authorization': `Bearer ${openai_api_key}`,
+        'OpenAI-Beta': 'assistants=v2',
+      },
+    });
+    if (!res.ok) throw new Error(`OpenAI error: ${await res.text()}`);
+    const data = await res.json() as { data: any[] };
+    // Normalise to { id, role, content } shape
+    const messages = data.data.map((m: any) => ({
+      id: m.id,
+      role: m.role as 'user' | 'assistant',
+      content: m.content
+        .filter((c: any) => c.type === 'text')
+        .map((c: any) => c.text.value)
+        .join(''),
+      annotations: m.content
+        .filter((c: any) => c.type === 'text')
+        .flatMap((c: any) => c.text.annotations ?? []),
+    }));
+    return new Response(JSON.stringify({ messages }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (err: any) {
+    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
+
 // Main worker with routing
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -634,6 +674,8 @@ export default {
       return withCors(await kbSync(request, env));
     } else if (path === "/api/assistant") {
       return withCors(await assistant(request, env));
+    } else if (path === "/api/assistant/messages") {
+      return withCors(await assistantMessages(request));
     } else {
       return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } });
     }

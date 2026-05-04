@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { ChatThread, UserSettings, saveChatThread } from '../services/meetingService';
 import { Project } from '../types';
@@ -29,6 +29,22 @@ interface UseAssistantChatReturn {
 
 const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL ?? '';
 
+function extractAnnotations(
+  annotations: any[] | undefined,
+  setter: React.Dispatch<React.SetStateAction<Record<string, string>>>,
+) {
+  if (!annotations?.length) return;
+  const entries: Record<string, string> = {};
+  for (const ann of annotations) {
+    if (ann.type === 'file_citation' && ann.text && ann.file_citation?.file_id) {
+      entries[ann.text] = ann.file_citation.file_id;
+    }
+  }
+  if (Object.keys(entries).length > 0) {
+    setter(prev => ({ ...prev, ...entries }));
+  }
+}
+
 export function useAssistantChat({
   userId,
   project,
@@ -45,10 +61,9 @@ export function useAssistantChat({
   // Track the active OpenAI thread ID across the lifetime of this hook instance
   const activeThreadIdRef = useRef<string | null>(thread?.openai_thread_id ?? null);
 
-  // When the user picks a DIFFERENT existing thread from the sidebar, reset the chat.
-  // We must NOT reset when a new thread is created and propagated back as a prop —
-  // that case is detected by checking whether the new thread id matches what we
-  // already set in activeThreadIdRef during sendMessage.
+  // When the user picks a DIFFERENT existing thread from the sidebar, reset the chat
+  // and load history from OpenAI. Skip when a new thread is created and propagated
+  // back as a prop (detected by matching activeThreadIdRef).
   useEffect(() => {
     const incomingOaiId = thread?.openai_thread_id ?? null;
     if (incomingOaiId !== null && incomingOaiId === activeThreadIdRef.current) {
@@ -60,7 +75,32 @@ export function useAssistantChat({
     setMessages([]);
     setAnnotationsMap({});
     setError(null);
-  }, [thread?.id]);
+
+    if (!incomingOaiId || !settings?.openaiApiKey) return;
+
+    // Load existing messages from OpenAI
+    fetch(`${API_BASE}/api/assistant/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ threadId: incomingOaiId, openai_api_key: settings.openaiApiKey }),
+    })
+      .then(r => r.json())
+      .then((data: { messages?: Array<{ id: string; role: 'user' | 'assistant'; content: string; annotations: any[] }> }) => {
+        if (!data.messages) return;
+        setMessages(data.messages.map(m => ({ id: m.id, role: m.role, content: m.content })));
+        // Restore annotationsMap from historical annotations
+        const restored: Record<string, string> = {};
+        for (const m of data.messages) {
+          for (const ann of (m.annotations ?? [])) {
+            if (ann.type === 'file_citation' && ann.text && ann.file_citation?.file_id) {
+              restored[ann.text] = ann.file_citation.file_id;
+            }
+          }
+        }
+        if (Object.keys(restored).length > 0) setAnnotationsMap(restored);
+      })
+      .catch(() => { /* silently ignore history load errors */ });
+  }, [thread?.id, settings?.openaiApiKey]);
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
@@ -144,7 +184,7 @@ export function useAssistantChat({
 
           try {
             const evt = JSON.parse(raw);
-            // OpenAI v2 SSE: object === 'thread.message.delta'
+
             if (evt.object === 'thread.message.delta') {
               const textContent = evt.delta?.content?.[0]?.text;
               const delta: string = textContent?.value ?? '';
@@ -155,19 +195,14 @@ export function useAssistantChat({
                     : m
                 ));
               }
-              // Extract file_citation annotations: map marker → file_id
-              const annotations: any[] = textContent?.annotations ?? [];
-              if (annotations.length > 0) {
-                const newEntries: Record<string, string> = {};
-                for (const ann of annotations) {
-                  if (ann.type === 'file_citation' && ann.text && ann.file_citation?.file_id) {
-                    newEntries[ann.text] = ann.file_citation.file_id;
-                  }
-                }
-                if (Object.keys(newEntries).length > 0) {
-                  setAnnotationsMap(prev => ({ ...prev, ...newEntries }));
-                }
-              }
+              // Annotations sometimes arrive inline with delta chunks
+              extractAnnotations(textContent?.annotations, setAnnotationsMap);
+            }
+
+            // thread.message.completed carries the final, authoritative annotations
+            if (evt.object === 'thread.message') {
+              const textContent = evt.content?.find((c: any) => c.type === 'text')?.text;
+              extractAnnotations(textContent?.annotations, setAnnotationsMap);
             }
           } catch {
             // non-JSON line — skip
