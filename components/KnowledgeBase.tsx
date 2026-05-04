@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { AgGridReact } from 'ag-grid-react';
 import type { ColDef, ICellRendererParams, ValueFormatterParams, ValueGetterParams } from 'ag-grid-community';
 import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
+import 'ag-grid-community/styles/ag-grid.css';
+import 'ag-grid-community/styles/ag-theme-alpine.css';
 import { KBDocument, subscribeKBDocuments, saveKBDocument, deleteKBDocument } from '../services/meetingService';
 import KBDocumentDrawer from './KBDocumentDrawer';
 import { v4 as uuidv4 } from 'uuid';
@@ -234,7 +236,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
       </div>
 
       {/* AG Grid */}
-      <div className="flex-1 rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+      <div className="ag-theme-alpine flex-1 rounded-xl overflow-hidden border border-slate-200 shadow-sm" style={{ height: '100%' }}>
         {loading ? (
           <div className="h-full flex items-center justify-center text-slate-400">Loading...</div>
         ) : (
@@ -249,7 +251,6 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
             paginationPageSize={25}
             paginationPageSizeSelector={[25, 50, 100]}
             suppressCellFocus
-            theme="legacy"
           />
         )}
       </div>
