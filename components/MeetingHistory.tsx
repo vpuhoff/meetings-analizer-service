@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Meeting, MeetingVersion, getMeetings, getMeetingVersions, deleteMeeting, saveMeeting } from '../services/meetingService';
+import { Meeting, MeetingVersion, getMeetings, getMeetingVersions, deleteMeeting, saveMeeting, subscribeKBDocuments } from '../services/meetingService';
 import { MeetingAnalysis } from '../types';
 
 interface MeetingHistoryProps {
@@ -8,6 +8,7 @@ interface MeetingHistoryProps {
 }
 
 const MeetingHistory: React.FC<MeetingHistoryProps> = ({ userId, onOpenReport }) => {
+  const [kbMeetingIds, setKbMeetingIds] = useState<Set<string>>(new Set());
   const [meetings, setMeetings] = useState<Meeting[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
@@ -20,6 +21,13 @@ const MeetingHistory: React.FC<MeetingHistoryProps> = ({ userId, onOpenReport })
 
   useEffect(() => {
     loadMeetings();
+  }, [userId]);
+
+  useEffect(() => {
+    const unsub = subscribeKBDocuments(userId, (docs) => {
+      setKbMeetingIds(new Set(docs.map(d => d.meeting_id).filter(Boolean)));
+    });
+    return unsub;
   }, [userId]);
 
   const loadMeetings = async () => {
@@ -98,11 +106,21 @@ const MeetingHistory: React.FC<MeetingHistoryProps> = ({ userId, onOpenReport })
                 className={`p-4 cursor-pointer hover:bg-brand-50 transition-colors ${selectedMeeting?.id === meeting.id ? 'bg-brand-50 border-l-4 border-brand-500' : 'border-l-4 border-transparent'}`}
                 onClick={() => handleSelectMeeting(meeting)}
               >
-                <div className="flex justify-between items-start">
-                  <h3 className="font-medium text-slate-900 truncate pr-2">{meeting.title}</h3>
-                  <button onClick={(e) => handleDelete(e, meeting.id)} className="text-slate-400 hover:text-red-500">
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                  </button>
+                <div className="flex justify-between items-start gap-1">
+                  <h3 className="font-medium text-slate-900 truncate">{meeting.title}</h3>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {kbMeetingIds.has(meeting.id) && (
+                      <span title="Saved to Knowledge Base" className="flex items-center gap-0.5 px-1.5 py-0.5 bg-emerald-100 text-emerald-700 text-[10px] font-semibold rounded-full">
+                        <svg className="w-2.5 h-2.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
+                        </svg>
+                        KB
+                      </span>
+                    )}
+                    <button onClick={(e) => handleDelete(e, meeting.id)} className="text-slate-400 hover:text-red-500">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                    </button>
+                  </div>
                 </div>
                 <div className="text-xs text-slate-500 mt-1">
                   {new Date(meeting.createdAt).toLocaleString()}
