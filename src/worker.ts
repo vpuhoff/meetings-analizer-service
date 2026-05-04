@@ -509,9 +509,11 @@ async function assistant(request: Request, env: any) {
       assistant_id: string;
       openai_api_key: string;
       vectorStoreId?: string | null;
+      projectContext?: string | null;
+      teamContext?: string | null;
     };
 
-    const { message, threadId: incomingThreadId, assistant_id, openai_api_key, vectorStoreId } = body;
+    const { message, threadId: incomingThreadId, assistant_id, openai_api_key, vectorStoreId, projectContext, teamContext } = body;
 
     if (!openai_api_key) {
       return new Response(JSON.stringify({ error: 'openai_api_key is required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
@@ -556,11 +558,20 @@ async function assistant(request: Request, env: any) {
       if (!msgRes.ok) throw new Error(`Failed to add message: ${await msgRes.text()}`);
     }
 
-    // 2. Create streaming run
+    // 2. Build additional_instructions from project context (same as analysis prompts)
+    const contextParts: string[] = [];
+    if (projectContext) contextParts.push(`PROJECT CONTEXT:\n${projectContext}`);
+    if (teamContext) contextParts.push(`TEAM MEMBERS:\n${teamContext}`);
+    const additional_instructions = contextParts.length > 0 ? contextParts.join('\n\n') : undefined;
+
+    // 3. Create streaming run
+    const runBody: Record<string, unknown> = { assistant_id, stream: true };
+    if (additional_instructions) runBody.additional_instructions = additional_instructions;
+
     const runRes = await fetch(`${oaiBase}/threads/${threadId}/runs`, {
       method: 'POST',
       headers: oaiHeaders,
-      body: JSON.stringify({ assistant_id, stream: true }),
+      body: JSON.stringify(runBody),
     });
     if (!runRes.ok) throw new Error(`Failed to start run: ${await runRes.text()}`);
 

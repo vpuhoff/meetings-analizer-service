@@ -94,6 +94,8 @@ export function useAssistantChat({
           assistant_id: settings.openaiAssistantId,
           openai_api_key: settings.openaiApiKey,
           vectorStoreId: project.openai_vector_store_id ?? null,
+          projectContext: project.context ?? null,
+          teamContext: project.team ?? null,
         }),
       });
 
