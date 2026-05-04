@@ -7,6 +7,8 @@ import Dashboard from './components/Dashboard';
 import Projects from './components/Projects';
 import MeetingHistory from './components/MeetingHistory';
 import ProfileModal from './components/ProfileModal';
+import AskAI from './components/AskAI';
+import KnowledgeBase from './components/KnowledgeBase';
 import { analyzeMeeting, askMeetingQuestion } from './services/geminiService';
 import { saveMeeting, saveMeetingVersion, Meeting, MeetingVersion, getProjects, Project } from './services/meetingService';
 import { MeetingAnalysis, ProcessingStatus } from './types';
@@ -36,10 +38,10 @@ const App: React.FC = () => {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
-  // Auth & History State
+  // Auth & Navigation State
   const [user, setUser] = useState<User | null>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
+  const [activeTab, setActiveTab] = useState<'extract' | 'history' | 'ask-ai' | 'knowledge'>('extract');
   const [currentMeetingId, setCurrentMeetingId] = useState<string | null>(null);
 
   // Close user menu on outside click
@@ -285,7 +287,7 @@ const App: React.FC = () => {
     setResult(analysis);
     setCurrentMeetingId(meetingId);
     setStatus('completed');
-    setShowHistory(false);
+    setActiveTab('extract');
   };
 
   if (!isAuthReady) {
@@ -335,7 +337,7 @@ const App: React.FC = () => {
                             <p className="text-xs font-semibold text-slate-700 truncate">{user.displayName || user.email}</p>
                           </div>
                           <button
-                            onClick={() => { setShowUserMenu(false); setShowHistory(!showHistory); if (!showHistory) handleReset(); }}
+                            onClick={() => { setShowUserMenu(false); setActiveTab('history'); }}
                             className="w-full text-left px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-2"
                           >
                             <svg className="w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -379,27 +381,53 @@ const App: React.FC = () => {
         </div>
       </nav>
 
-      {/* History — full width */}
-      {showHistory && user && (
-        <div className="px-4 sm:px-6 lg:px-8 pt-10 animate-fade-in-up">
-          <div className="flex justify-between items-center mb-6">
-            <h1 className="text-2xl font-bold text-slate-900">Your Meetings</h1>
-            <button 
-              onClick={() => setShowHistory(false)}
-              className="text-sm text-brand-600 hover:text-brand-700 font-medium"
-            >
-              &larr; Back to Extractor
-            </button>
+      {/* Tab Navigation */}
+      {user && (
+        <div className="bg-white border-b border-slate-200">
+          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <nav className="flex space-x-1" aria-label="Tabs">
+              {([
+                { id: 'extract', label: 'New Extract', icon: 'M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z' },
+                { id: 'history', label: 'Meeting History', icon: 'M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z' },
+                { id: 'ask-ai', label: 'Ask AI', icon: 'M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z' },
+                { id: 'knowledge', label: 'Knowledge Base', icon: 'M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4' },
+              ] as { id: 'extract' | 'history' | 'ask-ai' | 'knowledge'; label: string; icon: string }[]).map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-4 py-3.5 text-sm font-medium border-b-2 transition-colors ${
+                    activeTab === tab.id
+                      ? 'border-brand-600 text-brand-700'
+                      : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                  }`}
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={tab.icon} />
+                  </svg>
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
           </div>
-          <MeetingHistory userId={user.uid} onOpenReport={handleOpenHistoryReport} />
         </div>
       )}
 
-      {/* Main Content */}
+      {/* Tab Content */}
+      {activeTab === 'history' && user ? (
+        <div className="px-4 sm:px-6 lg:px-8 pt-8 animate-fade-in-up">
+          <MeetingHistory userId={user.uid} onOpenReport={handleOpenHistoryReport} />
+        </div>
+      ) : activeTab === 'ask-ai' && user ? (
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 animate-fade-in-up">
+          <AskAI />
+        </div>
+      ) : activeTab === 'knowledge' && user ? (
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 animate-fade-in-up">
+          <KnowledgeBase />
+        </div>
+      ) : (
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-10">
-        
-        {showHistory && user ? null : (
-          <>
+        <>
             {status === 'idle' && (
           <div className="animate-fade-in-up">
             <Hero />
@@ -533,10 +561,9 @@ const App: React.FC = () => {
             </div>
           </div>
         )}
-          </>
-        )}
-
+        </>
       </main>
+      )}
       {showProfileModal && user && (
         <ProfileModal user={user} onClose={() => setShowProfileModal(false)} />
       )}
