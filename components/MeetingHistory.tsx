@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Meeting, MeetingVersion, getMeetings, getMeetingVersions, deleteMeeting } from '../services/meetingService';
+import { Meeting, MeetingVersion, getMeetings, getMeetingVersions, deleteMeeting, saveMeeting } from '../services/meetingService';
 import { MeetingAnalysis } from '../types';
 
 interface MeetingHistoryProps {
@@ -13,6 +13,10 @@ const MeetingHistory: React.FC<MeetingHistoryProps> = ({ userId, onOpenReport })
   const [selectedMeeting, setSelectedMeeting] = useState<Meeting | null>(null);
   const [versions, setVersions] = useState<MeetingVersion[]>([]);
   const [loadingVersions, setLoadingVersions] = useState(false);
+  const [editingDate, setEditingDate] = useState(false);
+  const [dateInput, setDateInput] = useState('');
+  const [savingDate, setSavingDate] = useState(false);
+  const [dateError, setDateError] = useState<string | null>(null);
 
   useEffect(() => {
     loadMeetings();
@@ -27,10 +31,40 @@ const MeetingHistory: React.FC<MeetingHistoryProps> = ({ userId, onOpenReport })
 
   const handleSelectMeeting = async (meeting: Meeting) => {
     setSelectedMeeting(meeting);
+    setEditingDate(false);
     setLoadingVersions(true);
     const data = await getMeetingVersions(meeting.id);
     setVersions(data);
     setLoadingVersions(false);
+  };
+
+  const handleStartEditDate = () => {
+    if (!selectedMeeting) return;
+    // datetime-local input expects 'YYYY-MM-DDTHH:mm'
+    const d = new Date(selectedMeeting.createdAt);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const local = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    setDateInput(local);
+    setEditingDate(true);
+  };
+
+  const handleSaveDate = async () => {
+    if (!selectedMeeting || !dateInput) return;
+    setSavingDate(true);
+    setDateError(null);
+    try {
+      const newDate = new Date(dateInput).toISOString();
+      await saveMeeting({ id: selectedMeeting.id, createdAt: newDate, updatedAt: new Date().toISOString() });
+      const updated = { ...selectedMeeting, createdAt: newDate };
+      setSelectedMeeting(updated);
+      setMeetings(prev => prev.map(m => m.id === updated.id ? updated : m).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+      setEditingDate(false);
+    } catch (err: any) {
+      console.error('Failed to save date:', err);
+      setDateError(err?.message || 'Failed to save date');
+    } finally {
+      setSavingDate(false);
+    }
   };
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
@@ -71,7 +105,7 @@ const MeetingHistory: React.FC<MeetingHistoryProps> = ({ userId, onOpenReport })
                   </button>
                 </div>
                 <div className="text-xs text-slate-500 mt-1">
-                  {new Date(meeting.createdAt).toLocaleDateString()}
+                  {new Date(meeting.createdAt).toLocaleString()}
                 </div>
                 <div className="mt-2 flex flex-wrap gap-1">
                   {(meeting.projectTags || []).slice(0, 3).map(tag => (
@@ -89,7 +123,50 @@ const MeetingHistory: React.FC<MeetingHistoryProps> = ({ userId, onOpenReport })
       <div className="w-full md:w-2/3 overflow-y-auto custom-scrollbar bg-white">
         {selectedMeeting ? (
           <div className="p-6">
-            <h2 className="text-xl font-bold text-slate-900 mb-2">{selectedMeeting.title}</h2>
+            <h2 className="text-xl font-bold text-slate-900 mb-1">{selectedMeeting.title}</h2>
+            <div className="flex items-center gap-2 mb-4">
+              {editingDate ? (
+                <>
+                  <input
+                    type="datetime-local"
+                    value={dateInput}
+                    onChange={e => setDateInput(e.target.value)}
+                    className="text-xs border border-slate-300 rounded px-2 py-1 focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                  />
+                  <button
+                    onClick={handleSaveDate}
+                    disabled={savingDate}
+                    className="text-xs px-2 py-1 bg-brand-600 text-white rounded hover:bg-brand-700 disabled:opacity-50 transition-colors"
+                  >
+                    {savingDate ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    onClick={() => { setEditingDate(false); setDateError(null); }}
+                    className="text-xs px-2 py-1 text-slate-600 bg-slate-100 rounded hover:bg-slate-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  {dateError && (
+                    <span className="text-xs text-red-500">{dateError}</span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <span className="text-sm text-slate-500">
+                    {new Date(selectedMeeting.createdAt).toLocaleString()}
+                  </span>
+                  <button
+                    onClick={handleStartEditDate}
+                    className="text-slate-400 hover:text-brand-600 transition-colors"
+                    title="Edit date"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+                    </svg>
+                  </button>
+                </>
+              )}
+            </div>
             <div className="flex flex-wrap gap-2 mb-6">
               {(selectedMeeting.techStackTags || []).map(tag => (
                 <span key={tag} className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-full">{tag}</span>

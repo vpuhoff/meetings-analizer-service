@@ -113,7 +113,7 @@ service cloud.firestore {
     match /meetings/{meetingId} {
       allow read: if isAuthenticated() && resource.data.userId == request.auth.uid;
       allow create: if isAuthenticated() && isValidMeeting(request.resource.data) && uidUnchanged();
-      allow update: if isAuthenticated() && isDocOwner() && isValidMeeting(request.resource.data) && uidNotModified() && request.resource.data.createdAt == resource.data.createdAt;
+      allow update: if isAuthenticated() && isDocOwner() && isValidMeeting(request.resource.data) && uidNotModified();
       allow delete: if isAuthenticated() && isDocOwner();
 
       match /versions/{versionId} {
