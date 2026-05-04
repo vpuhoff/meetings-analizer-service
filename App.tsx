@@ -467,8 +467,8 @@ const App: React.FC = () => {
           <MeetingHistory userId={user.uid} onOpenReport={handleOpenHistoryReport} />
         </div>
       ) : activeTab === 'ask-ai' && user ? (
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 animate-fade-in-up">
-          <AskAI />
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 animate-fade-in-up">
+          <AskAI userId={user.uid} projects={projects} />
         </div>
       ) : activeTab === 'projects' && user ? (
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 animate-fade-in-up">

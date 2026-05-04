@@ -11,6 +11,7 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ user, onClose }) => {
   const [settings, setSettings] = useState<UserSettings>({
     userId: user.uid,
     openaiApiKey: '',
+    openaiAssistantId: '',
     autoSaveToIndex: false,
     updatedAt: ''
   });
@@ -123,6 +124,23 @@ const ProfileModal: React.FC<ProfileModalProps> = ({ user, onClose }) => {
                     )}
                   </button>
                 </div>
+              </div>
+
+              {/* OpenAI Assistant ID */}
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-1">
+                  OpenAI Assistant ID
+                </label>
+                <p className="text-xs text-slate-500 mb-2">
+                  Used for the Ask AI chat. Found in OpenAI Platform → Assistants.
+                </p>
+                <input
+                  type="text"
+                  value={settings.openaiAssistantId || ''}
+                  onChange={e => setSettings({ ...settings, openaiAssistantId: e.target.value })}
+                  placeholder="asst_xxxxxxxxxxxxxxxx"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-brand-500 focus:border-brand-500 font-mono"
+                />
               </div>
 
               {/* Auto Save to Index */}

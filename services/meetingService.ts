@@ -184,6 +184,7 @@ export async function deleteProject(projectId: string) {
 export interface UserSettings {
   userId: string;
   openaiApiKey?: string;
+  openaiAssistantId?: string;
   autoSaveToIndex?: boolean;
   updatedAt: string;
 }
@@ -246,6 +247,52 @@ export async function deleteKBDocument(docId: string) {
   const path = `knowledge_base/${docId}`;
   try {
     await deleteDoc(doc(db, 'knowledge_base', docId));
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+// Chat Threads
+export interface ChatThread {
+  id: string;
+  userId: string;
+  project_id: string;
+  openai_thread_id: string;
+  title: string;
+  created_at: number;
+  updated_at: number;
+}
+
+export async function saveChatThread(thread: ChatThread): Promise<void> {
+  const path = `chat_threads/${thread.id}`;
+  try {
+    await setDoc(doc(db, 'chat_threads', thread.id), thread, { merge: true });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, path);
+  }
+}
+
+export async function getChatThreads(userId: string, projectId: string): Promise<ChatThread[]> {
+  const path = 'chat_threads';
+  try {
+    const q = query(
+      collection(db, path),
+      where('userId', '==', userId),
+      where('project_id', '==', projectId),
+      orderBy('updated_at', 'desc')
+    );
+    const snap = await getDocs(q);
+    return snap.docs.map(d => d.data() as ChatThread);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, path);
+    return [];
+  }
+}
+
+export async function deleteChatThread(threadId: string): Promise<void> {
+  const path = `chat_threads/${threadId}`;
+  try {
+    await deleteDoc(doc(db, 'chat_threads', threadId));
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }
