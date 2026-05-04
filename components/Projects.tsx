@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Project } from '../types';
-import { getProjects, saveProject, deleteProject } from '../services/meetingService';
+import { getProjects, saveProject, deleteProject, getUserSettings } from '../services/meetingService';
 import { v4 as uuidv4 } from 'uuid';
 
 interface ProjectsProps {
@@ -22,6 +22,8 @@ const Projects: React.FC<ProjectsProps> = ({ userId, onSelectProject, selectedPr
     openai_vector_store_id: ''
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [creatingVS, setCreatingVS] = useState(false);
+  const [vsError, setVsError] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -122,6 +124,37 @@ const Projects: React.FC<ProjectsProps> = ({ userId, onSelectProject, selectedPr
     }
   };
 
+  const handleCreateVectorStore = async () => {
+    const storeName = formData.name.trim() || 'Knowledge Base';
+    setCreatingVS(true);
+    setVsError('');
+    try {
+      const settings = await getUserSettings(userId);
+      if (!settings?.openaiApiKey) {
+        throw new Error('OpenAI API key not configured. Add it in Settings (profile icon).');
+      }
+      const res = await fetch('https://api.openai.com/v1/vector_stores', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${settings.openaiApiKey}`,
+          'Content-Type': 'application/json',
+          'OpenAI-Beta': 'assistants=v2',
+        },
+        body: JSON.stringify({ name: storeName }),
+      });
+      if (!res.ok) {
+        const err = await res.json() as { error?: { message?: string } };
+        throw new Error(err.error?.message || 'Failed to create Vector Store');
+      }
+      const data = await res.json() as { id: string };
+      setFormData(prev => ({ ...prev, openai_vector_store_id: data.id }));
+    } catch (err: any) {
+      setVsError(err.message);
+    } finally {
+      setCreatingVS(false);
+    }
+  };
+
   const handleCancel = () => {
     setIsCreating(false);
     setIsEditing(false);
@@ -198,14 +231,41 @@ const Projects: React.FC<ProjectsProps> = ({ userId, onSelectProject, selectedPr
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">OpenAI Vector Store ID</label>
-              <input
-                type="text"
-                value={formData.openai_vector_store_id}
-                onChange={(e) => setFormData({ ...formData, openai_vector_store_id: e.target.value })}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 font-mono text-sm"
-                placeholder="vs_xxxxxxxxxxxxxxxx"
-              />
-              <p className="text-xs text-slate-400 mt-1">Found in OpenAI Platform → Storage → Vector Stores</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={formData.openai_vector_store_id}
+                  onChange={(e) => setFormData({ ...formData, openai_vector_store_id: e.target.value })}
+                  className="flex-1 px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 font-mono text-sm"
+                  placeholder="vs_xxxxxxxxxxxxxxxx"
+                />
+                <button
+                  type="button"
+                  onClick={handleCreateVectorStore}
+                  disabled={creatingVS}
+                  title="Create a new Vector Store in OpenAI and fill in the ID automatically"
+                  className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-emerald-600 rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-wait transition-colors whitespace-nowrap"
+                >
+                  {creatingVS ? (
+                    <>
+                      <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+                      </svg>
+                      Creating…
+                    </>
+                  ) : (
+                    <>
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                      </svg>
+                      Create
+                    </>
+                  )}
+                </button>
+              </div>
+              {vsError && <p className="text-xs text-red-500 mt-1">{vsError}</p>}
+              <p className="text-xs text-slate-400 mt-1">Paste an existing ID or click Create to generate a new Vector Store</p>
             </div>
             <div className="flex gap-3 pt-2">
               <button
