@@ -272,7 +272,7 @@ const AskAI: React.FC<AskAIProps> = ({ userId, projects }) => {
         <div className="flex-1 flex flex-col overflow-hidden">
           {activeProject ? (
             <ChatWindow
-              key={`${activeProject.id}::${activeThread?.id ?? 'new'}`}
+              key={activeProject.id}
               userId={userId}
               project={activeProject}
               thread={activeThread}

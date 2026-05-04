@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { ChatThread, UserSettings, saveChatThread } from '../services/meetingService';
 import { Project } from '../types';
@@ -42,6 +42,13 @@ export function useAssistantChat({
 
   // Track the active OpenAI thread ID across the lifetime of this hook instance
   const activeThreadIdRef = useRef<string | null>(thread?.openai_thread_id ?? null);
+
+  // When the user picks a different thread from the sidebar, reset the chat
+  useEffect(() => {
+    activeThreadIdRef.current = thread?.openai_thread_id ?? null;
+    setMessages([]);
+    setError(null);
+  }, [thread?.id]);
 
   const sendMessage = useCallback(async () => {
     const text = input.trim();
