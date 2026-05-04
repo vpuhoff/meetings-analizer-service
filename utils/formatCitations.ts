@@ -1,5 +1,5 @@
-// Regex matching OpenAI file_citation markers, e.g. 【13†source】
-const CITATION_RE = /【[^†]*†source】/g;
+// Regex matching OpenAI file_citation markers, e.g. 【6:0†TDK_v2.md】
+const CITATION_RE = /【.*?】/g;
 
 /**
  * Replace OpenAI citation markers with Markdown link syntax understood by
