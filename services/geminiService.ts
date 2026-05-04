@@ -246,6 +246,106 @@ function formatTimestamp(seconds: number): string {
   return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
+export interface KBGenerationResult {
+  title: string;
+  systems: string[];
+  topics: string[];
+  content: string;
+}
+
+export const generateKBDocument = async (
+  analysis: MeetingAnalysis,
+  projectName: string,
+  projectContext: string,
+  teamContext: string,
+): Promise<KBGenerationResult> => {
+  const participants = Array.from(
+    new Set(analysis.transcript.map(s => s.speaker).filter(Boolean))
+  ).join(', ') || 'Unknown';
+
+  const meetingDate = new Date().toLocaleDateString('ru-RU');
+
+  const transcriptText = analysis.transcript.length > 0
+    ? analysis.transcript.map(s => `[${s.timestamp}] ${s.speaker}: ${s.text}`).join('\n')
+    : `Summary: ${analysis.summary}\n\nTopics: ${analysis.topics.join(', ')}\n\nDecisions:\n${analysis.decisions.map(d => `- ${d.decision}: ${d.context}`).join('\n')}\n\nAction Items:\n${analysis.actionItems.map(a => `- ${a.what} (${a.who})`).join('\n')}\n\nBlockers:\n${analysis.blockers.join('\n')}`;
+
+  const systemPrompt = `Ты — старший технический аналитик и куратор корпоративной Базы Знаний (Knowledge Base). 
+Твоя задача — проанализировать сырой транскрипт рабочей встречи и сформировать из него структурированный, точный и лаконичный документ. 
+
+В твоем распоряжении есть контекст проекта (словарь терминов, роли участников, архитектура). Ты ДОЛЖЕН использовать этот контекст для правильной интерпретации имен, должностей и технических аббревиатур, упомянутых во встрече.
+
+ДАННЫЕ ВСТРЕЧИ:
+- Проект: ${projectName}
+- Дата: ${meetingDate}
+- Участники: ${participants}
+
+КОНТЕКСТ ПРОЕКТА (Глоссарий и Роли):
+"""
+${projectContext || 'Не указан'}
+"""
+
+КОМАНДА:
+"""
+${teamContext || 'Не указана'}
+"""
+
+ТРАНСКРИПТ ВСТРЕЧИ:
+"""
+${transcriptText}
+"""
+
+ИНСТРУКЦИИ ПО ФОРМАТИРОВАНИЮ ОТВЕТА:
+Твой ответ должен быть строго в формате JSON, без дополнительных оберток или текста до/после него.
+
+Структура JSON:
+{
+  "title": "Краткое и емкое название для документа (не более 6-8 слов)",
+  "systems": ["Массив строк: только названия информационных систем, сервисов или продуктов, затронутых на встрече"],
+  "topics": ["Массив строк: ключевые обсуждаемые темы, проблемы или бизнес-процессы"],
+  "content": "Строка: готовый документ в формате Markdown с экранированными переносами строк"
+}
+
+ПРАВИЛА ДЛЯ ПОЛЯ content (Markdown):
+1. Документ должен быть написан в деловом, профессиональном стиле.
+2. Используй следующую структуру заголовков:
+   - # [Название встречи]
+   - **Метаданные:** Дата, Проект, Участники (списком).
+   - ## 📝 Executive Summary (2-4 предложения).
+   - ## 🎯 Decisions Log (принятые решения с контекстом курсивом).
+   - ## ✅ Action Items (чекбоксы [ ] с исполнителем).
+   - ## 🛠 Tech Stack & Details (технические детали, ошибки, конфигурации).
+   - ## ⚠️ Blockers & Risks (только если есть в транскрипте).
+3. Опирайся ТОЛЬКО на факты из транскрипта. Не придумывай задачи или решения.`;
+
+  const response = await fetch(`${API_BASE}/api/question`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      files: [],
+      question: systemPrompt,
+      projectContext: '',
+      teamContext: '',
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || 'KB generation failed');
+  }
+
+  const data = await response.json();
+  const raw: string = data.answer || '';
+
+  // Strip markdown code fences if present
+  const jsonStr = raw.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```\s*$/i, '').trim();
+
+  try {
+    return JSON.parse(jsonStr) as KBGenerationResult;
+  } catch {
+    throw new Error('Model returned invalid JSON. Raw: ' + raw.slice(0, 300));
+  }
+};
+
 export const askMeetingQuestion = async (files: File[], question: string, projectContext?: string, teamContext?: string): Promise<string> => {
   try {
     // Convert files to format expected by API

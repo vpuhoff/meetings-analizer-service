@@ -9,8 +9,8 @@ import MeetingHistory from './components/MeetingHistory';
 import ProfileModal from './components/ProfileModal';
 import AskAI from './components/AskAI';
 import KnowledgeBase from './components/KnowledgeBase';
-import { analyzeMeeting, askMeetingQuestion } from './services/geminiService';
-import { saveMeeting, saveMeetingVersion, Meeting, MeetingVersion, getProjects, Project } from './services/meetingService';
+import { analyzeMeeting, askMeetingQuestion, generateKBDocument } from './services/geminiService';
+import { saveMeeting, saveMeetingVersion, Meeting, MeetingVersion, getProjects, Project, KBDocument, saveKBDocument, subscribeKBDocuments } from './services/meetingService';
 import { MeetingAnalysis, ProcessingStatus } from './types';
 import { auth } from './firebase';
 import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User, signOut } from 'firebase/auth';
@@ -33,6 +33,7 @@ const App: React.FC = () => {
   });
 
   const [currentFiles, setCurrentFiles] = useState<File[]>([]);
+  const [kbDocExistsForMeeting, setKbDocExistsForMeeting] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -62,6 +63,15 @@ const App: React.FC = () => {
     });
     return () => unsubscribe();
   }, []);
+
+  // Check if KB doc already exists for current meeting
+  useEffect(() => {
+    if (!currentMeetingId || !user) { setKbDocExistsForMeeting(false); return; }
+    const unsub = subscribeKBDocuments(user.uid, (docs) => {
+      setKbDocExistsForMeeting(docs.some(d => d.meeting_id === currentMeetingId));
+    });
+    return unsub;
+  }, [currentMeetingId, user]);
 
   const handleLogin = async () => {
     const provider = new GoogleAuthProvider();
@@ -280,6 +290,33 @@ const App: React.FC = () => {
     setProgressPercent(0);
     setProgressMessage('');
     setCurrentMeetingId(null);
+  };
+
+  const handleSaveToKB = async () => {
+    if (!result || !user) throw new Error('No meeting data');
+    const project = projects.find(p => p.id === selectedProjectId);
+    const kbResult = await generateKBDocument(
+      result,
+      project?.name || '',
+      project?.context || '',
+      project?.team || '',
+    );
+    const doc: KBDocument = {
+      id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2),
+      userId: user.uid,
+      meeting_id: currentMeetingId || '',
+      project_id: selectedProjectId || '',
+      project_name: project?.name || '',
+      title: kbResult.title,
+      content: kbResult.content,
+      systems: kbResult.systems,
+      topics: kbResult.topics,
+      sync_status: 'out_of_sync',
+      openai_file_id: null,
+      created_at: Date.now(),
+      updated_at: Date.now(),
+    };
+    await saveKBDocument(doc);
   };
 
   const handleOpenHistoryReport = (analysis: MeetingAnalysis, meetingId: string) => {
@@ -536,6 +573,8 @@ const App: React.FC = () => {
               onReset={handleReset} 
               onReanalyze={handleReanalyze}
               onAskQuestion={handleAskQuestion}
+              onSaveToKB={user ? handleSaveToKB : undefined}
+              kbDocExists={kbDocExistsForMeeting}
             />
           </div>
         )}
