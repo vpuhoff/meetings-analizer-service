@@ -183,11 +183,11 @@ const Projects: React.FC<ProjectsProps> = ({ userId, onSelectProject, selectedPr
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Team</label>
-              <input
-                type="text"
+              <textarea
                 value={formData.team}
                 onChange={(e) => setFormData({ ...formData, team: e.target.value })}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500"
+                rows={3}
                 placeholder="Team members (comma separated)"
               />
             </div>
@@ -264,7 +264,7 @@ const Projects: React.FC<ProjectsProps> = ({ userId, onSelectProject, selectedPr
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               <div className="bg-slate-50 rounded-lg p-3">
                 <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1">Context</p>
-                <p className="text-sm text-slate-700 line-clamp-3">{project.context}</p>
+                <p className="text-sm text-slate-700">{project.context}</p>
               </div>
               {project.team && (
                 <div className="bg-slate-50 rounded-lg p-3">
