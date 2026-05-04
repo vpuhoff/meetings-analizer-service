@@ -330,23 +330,26 @@ const App: React.FC = () => {
         </div>
       </nav>
 
+      {/* History — full width */}
+      {showHistory && user && (
+        <div className="px-4 sm:px-6 lg:px-8 pt-10 animate-fade-in-up">
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-2xl font-bold text-slate-900">Your Meetings</h1>
+            <button 
+              onClick={() => setShowHistory(false)}
+              className="text-sm text-brand-600 hover:text-brand-700 font-medium"
+            >
+              &larr; Back to Extractor
+            </button>
+          </div>
+          <MeetingHistory userId={user.uid} onOpenReport={handleOpenHistoryReport} />
+        </div>
+      )}
+
       {/* Main Content */}
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 pt-10">
         
-        {showHistory && user ? (
-          <div className="animate-fade-in-up">
-            <div className="flex justify-between items-center mb-6">
-              <h1 className="text-2xl font-bold text-slate-900">Your Meetings</h1>
-              <button 
-                onClick={() => setShowHistory(false)}
-                className="text-sm text-brand-600 hover:text-brand-700 font-medium"
-              >
-                &larr; Back to Extractor
-              </button>
-            </div>
-            <MeetingHistory userId={user.uid} onOpenReport={handleOpenHistoryReport} />
-          </div>
-        ) : (
+        {showHistory && user ? null : (
           <>
             {status === 'idle' && (
           <div className="animate-fade-in-up">

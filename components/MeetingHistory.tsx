@@ -82,7 +82,7 @@ const MeetingHistory: React.FC<MeetingHistoryProps> = ({ userId, onOpenReport })
   }
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col md:flex-row h-[600px]">
+    <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col md:flex-row h-[calc(100vh-12rem)]">
       {/* Meetings List */}
       <div className="w-full md:w-1/3 border-r border-slate-200 overflow-y-auto custom-scrollbar bg-slate-50">
         <div className="p-4 border-b border-slate-200 bg-white sticky top-0 z-10">
