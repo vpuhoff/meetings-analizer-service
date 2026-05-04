@@ -10,10 +10,11 @@ interface DashboardProps {
   onAskQuestion: (question: string) => Promise<string>;
   onSaveToKB?: () => Promise<void>;
   kbDocExists?: boolean;
+  onViewKBDoc?: () => void;
   resultVersion?: number;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanalyze, onAskQuestion, onSaveToKB, kbDocExists, resultVersion }) => {
+const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanalyze, onAskQuestion, onSaveToKB, kbDocExists, onViewKBDoc, resultVersion }) => {
   const [feedback, setFeedback] = useState("");
   const [showTranscript, setShowTranscript] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -128,12 +129,15 @@ const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanal
             </button>
           )}
           {kbDocExists && (
-            <span className="flex items-center px-4 py-2 text-sm font-medium text-slate-500 bg-slate-100 border border-slate-200 rounded-lg">
-              <svg className="w-4 h-4 mr-2 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            <button
+              onClick={onViewKBDoc}
+              className="flex items-center px-4 py-2 text-sm font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors"
+            >
+              <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
               </svg>
-              In Knowledge Base
-            </span>
+              In Knowledge Base ↗
+            </button>
           )}
           <button 
             onClick={handleExportMarkdown}

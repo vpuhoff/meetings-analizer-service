@@ -9,6 +9,8 @@ import MeetingHistory from './components/MeetingHistory';
 import ProfileModal from './components/ProfileModal';
 import AskAI from './components/AskAI';
 import KnowledgeBase from './components/KnowledgeBase';
+import KBViewModal from './components/KBViewModal';
+import KBEditorModal from './components/KBEditorModal';
 import { analyzeMeeting, askMeetingQuestion, generateKBDocument } from './services/geminiService';
 import { saveMeeting, saveMeetingVersion, Meeting, MeetingVersion, getProjects, Project, KBDocument, saveKBDocument, subscribeKBDocuments } from './services/meetingService';
 import { MeetingAnalysis, ProcessingStatus } from './types';
@@ -33,7 +35,9 @@ const App: React.FC = () => {
   });
 
   const [currentFiles, setCurrentFiles] = useState<File[]>([]);
-  const [kbDocExistsForMeeting, setKbDocExistsForMeeting] = useState(false);
+  const [kbDocForMeeting, setKbDocForMeeting] = useState<KBDocument | null>(null);
+  const [viewingKBDoc, setViewingKBDoc] = useState<KBDocument | null>(null);
+  const [editingKBDoc, setEditingKBDoc] = useState<KBDocument | null>(null);
   const [resultVersion, setResultVersion] = useState(0);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
@@ -68,9 +72,9 @@ const App: React.FC = () => {
 
   // Check if KB doc already exists for current meeting
   useEffect(() => {
-    if (!currentMeetingId || !user) { setKbDocExistsForMeeting(false); return; }
+    if (!currentMeetingId || !user) { setKbDocForMeeting(null); return; }
     const unsub = subscribeKBDocuments(user.uid, (docs) => {
-      setKbDocExistsForMeeting(docs.some(d => d.meeting_id === currentMeetingId));
+      setKbDocForMeeting(docs.find(d => d.meeting_id === currentMeetingId) ?? null);
     });
     return unsub;
   }, [currentMeetingId, user]);
@@ -582,7 +586,8 @@ const App: React.FC = () => {
               onReanalyze={handleReanalyze}
               onAskQuestion={handleAskQuestion}
               onSaveToKB={user ? handleSaveToKB : undefined}
-              kbDocExists={kbDocExistsForMeeting}
+              kbDocExists={!!kbDocForMeeting}
+              onViewKBDoc={kbDocForMeeting ? () => setViewingKBDoc(kbDocForMeeting) : undefined}
               resultVersion={resultVersion}
             />
           </div>
@@ -614,6 +619,21 @@ const App: React.FC = () => {
       )}
       {showProfileModal && user && (
         <ProfileModal user={user} onClose={() => setShowProfileModal(false)} />
+      )}
+
+      {viewingKBDoc && !editingKBDoc && (
+        <KBViewModal
+          doc={viewingKBDoc}
+          onClose={() => setViewingKBDoc(null)}
+          onEdit={() => { setEditingKBDoc(viewingKBDoc); setViewingKBDoc(null); }}
+        />
+      )}
+      {editingKBDoc && (
+        <KBEditorModal
+          doc={editingKBDoc}
+          onClose={() => setEditingKBDoc(null)}
+          onSave={async (updated) => { await saveKBDocument(updated); setEditingKBDoc(null); }}
+        />
       )}
     </div>
   );
