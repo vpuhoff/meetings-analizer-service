@@ -5,7 +5,8 @@ import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-alpine.css';
 import { KBDocument, subscribeKBDocuments, saveKBDocument, deleteKBDocument } from '../services/meetingService';
-import KBDocumentDrawer from './KBDocumentDrawer';
+import KBViewModal from './KBViewModal';
+import KBEditorModal from './KBEditorModal';
 import { v4 as uuidv4 } from 'uuid';
 
 ModuleRegistry.registerModules([AllCommunityModule]);
@@ -55,7 +56,8 @@ interface KnowledgeBaseProps {
 const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
   const [rows, setRows] = useState<KBDocument[]>([]);
   const [loading, setLoading] = useState(true);
-  const [drawerDoc, setDrawerDoc] = useState<KBDocument | null>(null);
+  const [viewDoc, setViewDoc] = useState<KBDocument | null>(null);
+  const [editingDoc, setEditingDoc] = useState<KBDocument | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
   const gridRef = useRef<AgGridReact>(null);
 
@@ -88,7 +90,17 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
     return (
       <div className="flex items-center gap-1.5 h-full">
         <button
-          onClick={() => setDrawerDoc(doc)}
+          onClick={() => setViewDoc(doc)}
+          title="View"
+          className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+          </svg>
+        </button>
+        <button
+          onClick={() => setEditingDoc(doc)}
           title="Edit"
           className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-brand-600 transition-colors"
         >
@@ -117,7 +129,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
         </button>
       </div>
     );
-  }, [handleDelete, handleSync, syncing]);
+  }, [handleDelete, handleSync, syncing, setViewDoc, setEditingDoc]);
 
   const colDefs: ColDef<KBDocument>[] = [
     {
@@ -129,7 +141,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
       filter: 'agTextColumnFilter',
       cellRenderer: (params: ICellRendererParams) => (
         <button
-          onClick={() => setDrawerDoc(params.data)}
+          onClick={() => setViewDoc(params.data)}
           className="text-brand-600 hover:text-brand-800 font-medium text-left truncate w-full"
         >
           {params.value}
@@ -184,8 +196,8 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
     {
       headerName: 'Actions',
       pinned: 'right',
-      minWidth: 120,
-      maxWidth: 120,
+      minWidth: 150,
+      maxWidth: 150,
       sortable: false,
       filter: false,
       cellRenderer: ActionsRenderer,
@@ -208,7 +220,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
       created_at: Date.now(),
       updated_at: Date.now(),
     };
-    setDrawerDoc(blank);
+    setEditingDoc(blank);
   };
 
   return (
@@ -255,12 +267,26 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
         )}
       </div>
 
-      {/* Drawer */}
-      <KBDocumentDrawer
-        doc={drawerDoc}
-        onClose={() => setDrawerDoc(null)}
-        onSaved={() => setDrawerDoc(null)}
-      />
+      {/* View Modal */}
+      {viewDoc && !editingDoc && (
+        <KBViewModal
+          doc={viewDoc}
+          onClose={() => setViewDoc(null)}
+          onEdit={() => { setEditingDoc(viewDoc); setViewDoc(null); }}
+        />
+      )}
+
+      {/* Editor Modal */}
+      {editingDoc && (
+        <KBEditorModal
+          doc={editingDoc}
+          onClose={() => setEditingDoc(null)}
+          onSave={async (updated) => {
+            await saveKBDocument(updated);
+            setEditingDoc(null);
+          }}
+        />
+      )}
     </div>
   );
 };
