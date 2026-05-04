@@ -18,6 +18,7 @@ export interface Project {
   description?: string;
   context: string;
   team?: string;
+  openai_vector_store_id?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -159,6 +160,17 @@ export async function getProjects(userId: string): Promise<Project[]> {
   }
 }
 
+export async function getProject(projectId: string): Promise<Project | null> {
+  const path = `projects/${projectId}`;
+  try {
+    const snap = await getDoc(doc(db, 'projects', projectId));
+    return snap.exists() ? (snap.data() as Project) : null;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+    return null;
+  }
+}
+
 export async function deleteProject(projectId: string) {
   const path = `projects/${projectId}`;
   try {
@@ -207,8 +219,9 @@ export interface KBDocument {
   content: string;
   systems: string[];
   topics: string[];
-  sync_status: 'synced' | 'pending' | 'out_of_sync';
+  sync_status: 'synced' | 'pending' | 'out_of_sync' | 'failed';
   openai_file_id: string | null;
+  last_synced_at?: number;
   created_at: number;
   updated_at: number;
 }

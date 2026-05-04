@@ -390,6 +390,112 @@ Output ONLY the transcript lines. No JSON, no markdown, no explanations.`,
   }
 }
 
+// KB Sync: upload document to OpenAI Vector Store
+async function kbSync(request: Request, env: any) {
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  try {
+    const body = await request.json() as {
+      content: string;
+      title: string;
+      topics: string[];
+      systems: string[];
+      old_file_id?: string | null;
+      vector_store_id: string;
+      openai_api_key: string;
+    };
+
+    const { content, title, topics, systems, old_file_id, vector_store_id, openai_api_key } = body;
+
+    if (!openai_api_key) {
+      return new Response(JSON.stringify({ error: 'OpenAI API key is required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (!vector_store_id) {
+      return new Response(JSON.stringify({ error: 'vector_store_id is required — set it in the project settings' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    const oaiHeaders = {
+      'Authorization': `Bearer ${openai_api_key}`,
+      'OpenAI-Beta': 'assistants=v2',
+    };
+
+    // 1. Delete old file from OpenAI if exists
+    if (old_file_id) {
+      await fetch(`https://api.openai.com/v1/files/${old_file_id}`, {
+        method: 'DELETE',
+        headers: oaiHeaders,
+      }).catch(() => {}); // ignore errors — file may already be deleted
+    }
+
+    // 2. Build file content with metadata header
+    const fileContent = `# ${title}\n\n**Systems:** ${systems.join(', ')}\n**Topics:** ${topics.join(', ')}\n\n${content}`;
+    const fileBlob = new Blob([fileContent], { type: 'text/plain' });
+    const formData = new FormData();
+    formData.append('file', fileBlob, `${title.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 60)}.md`);
+    formData.append('purpose', 'assistants');
+
+    // 3. Upload file to OpenAI
+    const uploadRes = await fetch('https://api.openai.com/v1/files', {
+      method: 'POST',
+      headers: oaiHeaders,
+      body: formData,
+    });
+
+    if (!uploadRes.ok) {
+      const err = await uploadRes.text();
+      return new Response(JSON.stringify({ error: `OpenAI file upload failed: ${err}` }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    const uploadedFile = await uploadRes.json() as { id: string };
+    const new_file_id = uploadedFile.id;
+
+    // 4. Add file to Vector Store batch
+    const batchRes = await fetch(`https://api.openai.com/v1/vector_stores/${vector_store_id}/file_batches`, {
+      method: 'POST',
+      headers: { ...oaiHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file_ids: [new_file_id] }),
+    });
+
+    if (!batchRes.ok) {
+      const err = await batchRes.text();
+      return new Response(JSON.stringify({ error: `Vector Store batch failed: ${err}` }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    const batch = await batchRes.json() as { id: string; status: string };
+
+    // 5. Poll batch status until completed or failed (max 30s)
+    let batchStatus = batch.status;
+    let polls = 0;
+    while (batchStatus === 'in_progress' || batchStatus === 'cancelling' || batchStatus === 'queued') {
+      if (polls >= 15) break; // 15 * 2s = 30s max
+      await new Promise(r => setTimeout(r, 2000));
+      const pollRes = await fetch(
+        `https://api.openai.com/v1/vector_stores/${vector_store_id}/file_batches/${batch.id}`,
+        { headers: oaiHeaders }
+      );
+      if (pollRes.ok) {
+        const polled = await pollRes.json() as { status: string };
+        batchStatus = polled.status;
+      }
+      polls++;
+    }
+
+    if (batchStatus !== 'completed') {
+      return new Response(JSON.stringify({ error: `Vector Store processing did not complete (status: ${batchStatus})`, new_file_id }), { status: 502, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    return new Response(JSON.stringify({ success: true, new_file_id }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+  } catch (err: any) {
+    return new Response(JSON.stringify({ error: err.message || 'KB sync failed' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
+
 // Main worker with routing
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
@@ -428,6 +534,8 @@ export default {
       return withCors(await question(request, env));
     } else if (path === "/api/markdown") {
       return withCors(await markdown(request, env));
+    } else if (path === "/api/kb/sync") {
+      return withCors(await kbSync(request, env));
     } else {
       return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } });
     }

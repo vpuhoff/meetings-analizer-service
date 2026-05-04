@@ -4,7 +4,7 @@ import type { ColDef, ICellRendererParams, ValueFormatterParams, ValueGetterPara
 import { AllCommunityModule, ModuleRegistry } from 'ag-grid-community';
 import 'ag-grid-community/styles/ag-grid.css';
 import 'ag-grid-community/styles/ag-theme-alpine.css';
-import { KBDocument, subscribeKBDocuments, saveKBDocument, deleteKBDocument } from '../services/meetingService';
+import { KBDocument, subscribeKBDocuments, saveKBDocument, deleteKBDocument, getUserSettings, getProject } from '../services/meetingService';
 import KBViewModal from './KBViewModal';
 import KBEditorModal from './KBEditorModal';
 import { v4 as uuidv4 } from 'uuid';
@@ -34,10 +34,11 @@ const TagsPillRenderer = ({ value, color }: { value: string[]; color: 'purple' |
 };
 
 const SyncStatusRenderer = ({ value }: { value: KBDocument['sync_status'] }) => {
-  const map = {
+  const map: Record<string, { label: string; cls: string }> = {
     synced: { label: 'Synced', cls: 'bg-emerald-100 text-emerald-700' },
-    pending: { label: 'Pending', cls: 'bg-yellow-100 text-yellow-700' },
-    out_of_sync: { label: 'Out of sync', cls: 'bg-red-100 text-red-600' },
+    pending: { label: 'Syncing…', cls: 'bg-yellow-100 text-yellow-700' },
+    out_of_sync: { label: 'Out of sync', cls: 'bg-orange-100 text-orange-600' },
+    failed: { label: 'Failed', cls: 'bg-red-100 text-red-600' },
   };
   const s = map[value] ?? map.out_of_sync;
   return (
@@ -76,14 +77,54 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
 
   const handleSync = useCallback(async (doc: KBDocument) => {
     setSyncing(doc.id);
+    // Immediately set pending in Firestore (fire-and-forget UX)
+    await saveKBDocument({ ...doc, sync_status: 'pending', updated_at: Date.now() });
     try {
-      await saveKBDocument({ ...doc, sync_status: 'pending', updated_at: Date.now() });
-      // TODO: call OpenAI Vector Store push here
-      await saveKBDocument({ ...doc, sync_status: 'synced', updated_at: Date.now() });
+      // Fetch user settings for OpenAI key
+      const settings = await getUserSettings(userId);
+      if (!settings?.openaiApiKey) {
+        throw new Error('OpenAI API key not configured. Add it in Settings (profile icon).');
+      }
+      // Fetch project for vector_store_id
+      const project = doc.project_id ? await getProject(doc.project_id) : null;
+      if (!project?.openai_vector_store_id) {
+        throw new Error('No Vector Store ID set for this project. Add it in Projects settings.');
+      }
+
+      const apiBase = (import.meta as any).env?.VITE_API_BASE_URL ?? '';
+      const res = await fetch(`${apiBase}/api/kb/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          content: doc.content,
+          title: doc.title,
+          topics: doc.topics,
+          systems: doc.systems,
+          old_file_id: doc.openai_file_id,
+          vector_store_id: project.openai_vector_store_id,
+          openai_api_key: settings.openaiApiKey,
+        }),
+      });
+
+      const data = await res.json() as { success?: boolean; new_file_id?: string; error?: string };
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Sync failed');
+      }
+
+      await saveKBDocument({
+        ...doc,
+        sync_status: 'synced',
+        openai_file_id: data.new_file_id ?? doc.openai_file_id,
+        last_synced_at: Date.now(),
+        updated_at: Date.now(),
+      });
+    } catch (err: any) {
+      await saveKBDocument({ ...doc, sync_status: 'failed', updated_at: Date.now() });
+      alert(`Sync error: ${err.message}`);
     } finally {
       setSyncing(null);
     }
-  }, []);
+  }, [userId]);
 
   const ActionsRenderer = useCallback((params: ICellRendererParams) => {
     const doc: KBDocument = params.data;
@@ -108,16 +149,25 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
           </svg>
         </button>
-        <button
-          onClick={() => handleSync(doc)}
-          title="Push to OpenAI"
-          disabled={doc.sync_status === 'synced' || syncing === doc.id}
-          className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-emerald-600 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
-        >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-          </svg>
-        </button>
+        {(doc.sync_status === 'out_of_sync' || doc.sync_status === 'failed') && syncing !== doc.id && (
+          <button
+            onClick={() => handleSync(doc)}
+            title="Push to OpenAI Vector Store"
+            className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-emerald-600 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+            </svg>
+          </button>
+        )}
+        {syncing === doc.id && (
+          <span className="p-1.5 text-yellow-500" title="Syncing…">
+            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+          </span>
+        )}
         <button
           onClick={() => handleDelete(doc.id)}
           title="Delete"

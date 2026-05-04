@@ -42,6 +42,7 @@ export interface Project {
   description?: string;
   context: string;
   team?: string;
+  openai_vector_store_id?: string;
   createdAt: string;
   updatedAt: string;
 }

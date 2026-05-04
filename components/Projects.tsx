@@ -18,7 +18,8 @@ const Projects: React.FC<ProjectsProps> = ({ userId, onSelectProject, selectedPr
     name: '',
     description: '',
     context: '',
-    team: ''
+    team: '',
+    openai_vector_store_id: ''
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -44,7 +45,7 @@ const Projects: React.FC<ProjectsProps> = ({ userId, onSelectProject, selectedPr
     setIsCreating(true);
     setIsEditing(false);
     setEditingProject(null);
-    setFormData({ name: '', description: '', context: '', team: '' });
+    setFormData({ name: '', description: '', context: '', team: '', openai_vector_store_id: '' });
   };
 
   const handleEdit = (project: Project) => {
@@ -55,7 +56,8 @@ const Projects: React.FC<ProjectsProps> = ({ userId, onSelectProject, selectedPr
       name: project.name,
       description: project.description || '',
       context: project.context,
-      team: project.team || ''
+      team: project.team || '',
+      openai_vector_store_id: project.openai_vector_store_id || ''
     });
   };
 
@@ -85,12 +87,15 @@ const Projects: React.FC<ProjectsProps> = ({ userId, onSelectProject, selectedPr
       if (formData.team) {
         (projectData as any).team = formData.team;
       }
+      if (formData.openai_vector_store_id) {
+        (projectData as any).openai_vector_store_id = formData.openai_vector_store_id;
+      }
 
       await saveProject(projectData);
       setIsCreating(false);
       setIsEditing(false);
       setEditingProject(null);
-      setFormData({ name: '', description: '', context: '', team: '' });
+      setFormData({ name: '', description: '', context: '', team: '', openai_vector_store_id: '' });
       await loadProjects();
     } catch (err: any) {
       setError(err.message || 'Failed to save project');
@@ -121,7 +126,7 @@ const Projects: React.FC<ProjectsProps> = ({ userId, onSelectProject, selectedPr
     setIsCreating(false);
     setIsEditing(false);
     setEditingProject(null);
-    setFormData({ name: '', description: '', context: '', team: '' });
+    setFormData({ name: '', description: '', context: '', team: '', openai_vector_store_id: '' });
     setError('');
   };
 
@@ -190,6 +195,17 @@ const Projects: React.FC<ProjectsProps> = ({ userId, onSelectProject, selectedPr
                 rows={3}
                 placeholder="Team members (comma separated)"
               />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">OpenAI Vector Store ID</label>
+              <input
+                type="text"
+                value={formData.openai_vector_store_id}
+                onChange={(e) => setFormData({ ...formData, openai_vector_store_id: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-brand-500 focus:border-brand-500 font-mono text-sm"
+                placeholder="vs_xxxxxxxxxxxxxxxx"
+              />
+              <p className="text-xs text-slate-400 mt-1">Found in OpenAI Platform → Storage → Vector Stores</p>
             </div>
             <div className="flex gap-3 pt-2">
               <button
