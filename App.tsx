@@ -34,6 +34,7 @@ const App: React.FC = () => {
 
   const [currentFiles, setCurrentFiles] = useState<File[]>([]);
   const [kbDocExistsForMeeting, setKbDocExistsForMeeting] = useState(false);
+  const [resultVersion, setResultVersion] = useState(0);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
@@ -155,6 +156,7 @@ const App: React.FC = () => {
       
       setResult(data);
       setStatus('completed');
+      setResultVersion(v => v + 1);
 
       // Save to Firebase if logged in
       if (user) {
@@ -234,6 +236,7 @@ const App: React.FC = () => {
         );
         setResult(data);
         setStatus('completed');
+        setResultVersion(v => v + 1);
 
         // Save new version to Firebase if logged in
         if (user && currentMeetingId) {
@@ -575,6 +578,7 @@ const App: React.FC = () => {
               onAskQuestion={handleAskQuestion}
               onSaveToKB={user ? handleSaveToKB : undefined}
               kbDocExists={kbDocExistsForMeeting}
+              resultVersion={resultVersion}
             />
           </div>
         )}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MeetingAnalysis } from '../types';
 import { generateMarkdownReport } from '../services/geminiService';
 
@@ -10,15 +10,21 @@ interface DashboardProps {
   onAskQuestion: (question: string) => Promise<string>;
   onSaveToKB?: () => Promise<void>;
   kbDocExists?: boolean;
+  resultVersion?: number;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanalyze, onAskQuestion, onSaveToKB, kbDocExists }) => {
+const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanalyze, onAskQuestion, onSaveToKB, kbDocExists, resultVersion }) => {
   const [feedback, setFeedback] = useState("");
   const [showTranscript, setShowTranscript] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isSavingToKB, setIsSavingToKB] = useState(false);
   const [kbSaved, setKbSaved] = useState(false);
   const [kbError, setKbError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setKbSaved(false);
+    setKbError(null);
+  }, [resultVersion]);
   
   // Q&A State
   const [question, setQuestion] = useState("");
