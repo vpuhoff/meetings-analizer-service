@@ -206,6 +206,14 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
       filter: 'agTextColumnFilter',
     },
     {
+      field: 'created_at',
+      headerName: 'Meeting Date',
+      minWidth: 130,
+      filter: 'agDateColumnFilter',
+      valueFormatter: (params: ValueFormatterParams) =>
+        params.value ? new Date(params.value).toLocaleDateString('ru-RU') : '—',
+    },
+    {
       field: 'systems',
       headerName: 'Systems',
       minWidth: 180,
