@@ -12,15 +12,27 @@ interface DashboardProps {
   kbDocExists?: boolean;
   onViewKBDoc?: () => void;
   resultVersion?: number;
+  meetingDate?: number;
+  onDateChange?: (newDate: number) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanalyze, onAskQuestion, onSaveToKB, kbDocExists, onViewKBDoc, resultVersion }) => {
+const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanalyze, onAskQuestion, onSaveToKB, kbDocExists, onViewKBDoc, resultVersion, meetingDate, onDateChange }) => {
   const [feedback, setFeedback] = useState("");
   const [showTranscript, setShowTranscript] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isSavingToKB, setIsSavingToKB] = useState(false);
   const [kbSaved, setKbSaved] = useState(false);
   const [kbError, setKbError] = useState<string | null>(null);
+
+  // Format timestamp to YYYY-MM-DD for <input type="date">
+  const dateValue = meetingDate
+    ? new Date(meetingDate).toISOString().slice(0, 10)
+    : '';
+
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.value || !onDateChange) return;
+    onDateChange(new Date(e.target.value).getTime());
+  };
 
   useEffect(() => {
     setKbSaved(false);
@@ -88,15 +100,34 @@ const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanal
 
   return (
     <div className="animate-fade-in space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-4">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-start mb-6 gap-4">
+        {/* Left: title + type badge + date */}
+        <div className="flex flex-col gap-2">
+          <div className="flex flex-wrap items-center gap-3">
             <h2 className="text-2xl font-bold text-slate-800">Meeting Intelligence Report</h2>
             <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-brand-100 text-brand-700 uppercase tracking-wide">
-                {data.meetingType || "Meeting"}
+              {data.meetingType || 'Meeting'}
             </span>
+          </div>
+          {/* Date picker */}
+          <div className="flex items-center gap-2">
+            <svg className="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <input
+              type="date"
+              value={dateValue}
+              onChange={handleDateChange}
+              disabled={!onDateChange}
+              className="text-sm text-slate-600 border border-slate-200 rounded-lg px-2 py-1 focus:ring-2 focus:ring-brand-400 focus:border-brand-400 disabled:opacity-50 disabled:cursor-default bg-white"
+            />
+          </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {/* Save to KB button */}
+
+        {/* Right: action buttons — ordered by importance */}
+        <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+          {/* KB: save or view */}
           {onSaveToKB && !kbDocExists && (
             <button
               onClick={handleSaveToKB}
@@ -109,7 +140,7 @@ const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanal
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                   </svg>
-                  Generating KB doc...
+                  Saving...
                 </>
               ) : kbSaved ? (
                 <>
@@ -123,7 +154,7 @@ const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanal
                   <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
                   </svg>
-                  Save to Knowledge Base
+                  Save to KB
                 </>
               )}
             </button>
@@ -136,21 +167,26 @@ const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanal
               <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4" />
               </svg>
-              In Knowledge Base ↗
+              In KB ↗
             </button>
           )}
-          <button 
+
+          {/* Divider */}
+          <div className="hidden sm:block w-px h-7 bg-slate-200" />
+
+          {/* Export */}
+          <button
             onClick={handleExportMarkdown}
             disabled={isExporting}
-            className="flex items-center px-4 py-2 text-sm font-medium text-brand-700 bg-brand-50 border border-brand-200 rounded-lg hover:bg-brand-100 transition-colors disabled:opacity-50 disabled:cursor-wait"
+            className="flex items-center px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors disabled:opacity-50 disabled:cursor-wait"
           >
             {isExporting ? (
               <>
-                 <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-brand-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                 </svg>
-                 Generating Markdown...
+                <svg className="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+                Exporting...
               </>
             ) : (
               <>
@@ -161,11 +197,16 @@ const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanal
               </>
             )}
           </button>
-          <button 
+
+          {/* Upload new — secondary action, less prominent */}
+          <button
             onClick={onReset}
-            className="px-4 py-2 text-sm font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+            className="flex items-center px-4 py-2 text-sm font-medium text-slate-500 bg-slate-50 border border-slate-200 rounded-lg hover:bg-slate-100 transition-colors"
           >
-            Upload New File
+            <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l4-4m0 0l4 4m-4-4v12" />
+            </svg>
+            New Upload
           </button>
         </div>
       </div>

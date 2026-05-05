@@ -302,6 +302,13 @@ const App: React.FC = () => {
     setCurrentMeetingId(null);
   };
 
+  const handleDateChange = async (newDate: number) => {
+    setCurrentMeetingDate(newDate);
+    if (!currentMeetingId) return;
+    const iso = new Date(newDate).toISOString();
+    await saveMeeting({ id: currentMeetingId, createdAt: iso, updatedAt: new Date().toISOString() });
+  };
+
   const handleSaveToKB = async () => {
     if (!result || !user) throw new Error('No meeting data');
     const project = projects.find(p => p.id === selectedProjectId);
@@ -596,6 +603,8 @@ const App: React.FC = () => {
               kbDocExists={!!kbDocForMeeting}
               onViewKBDoc={kbDocForMeeting ? () => setViewingKBDoc(kbDocForMeeting) : undefined}
               resultVersion={resultVersion}
+              meetingDate={currentMeetingDate}
+              onDateChange={user && currentMeetingId ? handleDateChange : undefined}
             />
           </div>
         )}
