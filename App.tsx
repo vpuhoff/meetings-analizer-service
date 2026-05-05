@@ -12,7 +12,7 @@ import KnowledgeBase from './components/KnowledgeBase';
 import KBViewModal from './components/KBViewModal';
 import KBEditorModal from './components/KBEditorModal';
 import { analyzeMeeting, askMeetingQuestion, generateKBDocument } from './services/geminiService';
-import { saveMeeting, saveMeetingVersion, Meeting, MeetingVersion, getProjects, Project, KBDocument, saveKBDocument, subscribeKBDocuments } from './services/meetingService';
+import { saveMeeting, saveMeetingVersion, Meeting, MeetingVersion, getProjects, Project, KBDocument, saveKBDocument, subscribeKBDocuments, getMeeting } from './services/meetingService';
 import { MeetingAnalysis, ProcessingStatus } from './types';
 import { auth } from './firebase';
 import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User, signOut } from 'firebase/auth';
@@ -305,7 +305,14 @@ const App: React.FC = () => {
   const handleSaveToKB = async () => {
     if (!result || !user) throw new Error('No meeting data');
     const project = projects.find(p => p.id === selectedProjectId);
-    const meetingDate = currentMeetingDate;
+    // Always fetch the latest createdAt from Firestore so date edits in History are reflected
+    let meetingDate = currentMeetingDate;
+    if (currentMeetingId) {
+      const freshMeeting = await getMeeting(currentMeetingId);
+      if (freshMeeting?.createdAt) {
+        meetingDate = new Date(freshMeeting.createdAt).getTime();
+      }
+    }
     const kbResult = await generateKBDocument(
       result,
       project?.name || '',

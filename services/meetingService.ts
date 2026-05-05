@@ -115,6 +115,17 @@ export async function getMeetings(userId: string): Promise<Meeting[]> {
   }
 }
 
+export async function getMeeting(meetingId: string): Promise<Meeting | null> {
+  const path = `meetings/${meetingId}`;
+  try {
+    const snap = await getDoc(doc(db, 'meetings', meetingId));
+    return snap.exists() ? (snap.data() as Meeting) : null;
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+    return null;
+  }
+}
+
 export async function getMeetingVersions(meetingId: string): Promise<MeetingVersion[]> {
   const path = `meetings/${meetingId}/versions`;
   try {
