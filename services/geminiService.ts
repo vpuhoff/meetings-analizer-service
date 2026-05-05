@@ -258,12 +258,15 @@ export const generateKBDocument = async (
   projectName: string,
   projectContext: string,
   teamContext: string,
+  meetingTimestamp?: number,
 ): Promise<KBGenerationResult> => {
   const participants = Array.from(
     new Set(analysis.transcript.map(s => s.speaker).filter(Boolean))
   ).join(', ') || 'Unknown';
 
-  const meetingDate = new Date().toLocaleDateString('ru-RU');
+  const meetingDate = meetingTimestamp
+    ? new Date(meetingTimestamp).toLocaleDateString('ru-RU')
+    : new Date().toLocaleDateString('ru-RU');
 
   const transcriptText = analysis.transcript.length > 0
     ? analysis.transcript.map(s => `[${s.timestamp}] ${s.speaker}: ${s.text}`).join('\n')

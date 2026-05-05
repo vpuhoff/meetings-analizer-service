@@ -325,6 +325,7 @@ const App: React.FC = () => {
       project?.name || '',
       project?.context || '',
       project?.team || '',
+      meetingDate,
     );
     const doc: KBDocument = {
       id: crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).slice(2),
