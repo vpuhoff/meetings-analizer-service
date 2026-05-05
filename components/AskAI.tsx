@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { collection, query, where, getDocs } from 'firebase/firestore';
+import { collection, query, where, getDocs, getDoc, doc } from 'firebase/firestore';
 import { db } from '../firebase';
 import { Project } from '../types';
 import {
@@ -39,21 +39,33 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ userId, project, thread, settin
   });
 
   const handleCitationClick = useCallback(async (fileId: string) => {
-    console.log('[Citation] clicked fileId:', fileId);
-    // Try matching by openai_file_id (the uploaded file ID stored during KB sync)
+    // 1. Try matching by openai_file_id (OpenAI file upload ID stored during KB sync)
     const q = query(collection(db, 'knowledge_base'), where('openai_file_id', '==', fileId));
     const snap = await getDocs(q);
-    console.log('[Citation] Firestore results:', snap.size, snap.docs.map(d => d.data().openai_file_id));
     if (!snap.empty) {
       setSelectedKbDoc(snap.docs[0].data() as KBDocument);
-    } else {
-      // Fallback: load all KB docs for this user and find by any file ID field
-      // (OpenAI may return vector store file IDs which differ from upload file IDs)
-      console.warn('[Citation] No doc found for fileId:', fileId, '— check openai_file_id values in Firestore');
-      setCitationNotFound(fileId);
-      setTimeout(() => setCitationNotFound(null), 3000);
+      return;
     }
-  }, []);
+
+    // 2. Fallback: the fileId here is the OpenAI file ID, but the annotation marker
+    //    【N:M†<kb_doc_id>.md】 embeds the KB doc ID in the filename.
+    //    annotationsMap key is the raw marker text — extract doc_id from it.
+    const markerEntry = Object.entries(annotationsMap).find(([, v]) => v === fileId);
+    if (markerEntry) {
+      const match = markerEntry[0].match(/【[^†]*†([^】]+)\.md】/);
+      if (match) {
+        const kbDocId = match[1];
+        const docSnap = await getDoc(doc(db, 'knowledge_base', kbDocId));
+        if (docSnap.exists()) {
+          setSelectedKbDoc(docSnap.data() as KBDocument);
+          return;
+        }
+      }
+    }
+
+    setCitationNotFound(fileId);
+    setTimeout(() => setCitationNotFound(null), 3000);
+  }, [annotationsMap]);
 
   // Auto-scroll
   useEffect(() => {

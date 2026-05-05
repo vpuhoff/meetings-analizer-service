@@ -398,6 +398,7 @@ async function kbSync(request: Request, env: any) {
 
   try {
     const body = await request.json() as {
+      doc_id?: string;
       content: string;
       title: string;
       topics: string[];
@@ -407,7 +408,7 @@ async function kbSync(request: Request, env: any) {
       openai_api_key: string;
     };
 
-    const { content, title, topics, systems, old_file_id, vector_store_id, openai_api_key } = body;
+    const { doc_id, content, title, topics, systems, old_file_id, vector_store_id, openai_api_key } = body;
 
     if (!openai_api_key) {
       return new Response(JSON.stringify({ error: 'OpenAI API key is required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
@@ -433,7 +434,10 @@ async function kbSync(request: Request, env: any) {
     const fileContent = `# ${title}\n\n**Systems:** ${systems.join(', ')}\n**Topics:** ${topics.join(', ')}\n\n${content}`;
     const fileBlob = new Blob([fileContent], { type: 'text/plain' });
     const formData = new FormData();
-    formData.append('file', fileBlob, `${title.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 60)}.md`);
+    // Use doc_id as filename so OpenAI citation annotations can be resolved back to KB docs.
+    // Fallback to sanitised title if doc_id not provided (backwards compat).
+    const filename = doc_id ? `${doc_id}.md` : `${title.replace(/[^a-zA-Z0-9]/g, '_').slice(0, 60)}.md`;
+    formData.append('file', fileBlob, filename);
     formData.append('purpose', 'assistants');
 
     // 3. Upload file to OpenAI

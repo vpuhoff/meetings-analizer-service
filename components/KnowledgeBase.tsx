@@ -96,6 +96,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          doc_id: doc.id,
           content: doc.content,
           title: doc.title,
           topics: doc.topics,
