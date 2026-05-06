@@ -1,4 +1,5 @@
 import os
+import gc
 import uuid
 import asyncio
 import torch
@@ -12,24 +13,29 @@ import datetime
 import omegaconf
 from tqdm import tqdm
 import traceback
+import sentry_sdk
+
+# --- Sentry ---
+sentry_sdk.init(
+    dsn="xxxxx",
+    integrations=[],
+    traces_sample_rate=0.0,
+)
 
 # --- Хотфикс для PyTorch 2.6.0+ ---
-# Разрешаем загрузку старых форматов весов Pyannote
 try:
     torch.serialization.add_safe_globals([
         omegaconf.listconfig.ListConfig,
         omegaconf.dictconfig.DictConfig,
-        set # иногда pyannote требует и базовые типы
+        set
     ])
 except AttributeError:
-    pass # Если PyTorch версии ниже 2.6, игнорируем
-# -----------------------------------
-# --- ГЛОБАЛЬНЫЙ ХОТФИКС ДЛЯ PYTORCH 2.6+ ---
-# Возвращаем старое поведение загрузки весов (как было до версии 2.6)
+    pass
+
+# --- Глобальный хотфикс для PyTorch 2.6+ ---
 _original_load = torch.load
 
 def legacy_load(*args, **kwargs):
-    # Принудительно отключаем параноидальную проверку, если она не задана жестко
     if 'weights_only' not in kwargs:
         kwargs['weights_only'] = False
     return _original_load(*args, **kwargs)
@@ -37,10 +43,9 @@ def legacy_load(*args, **kwargs):
 torch.load = legacy_load
 
 import whisperx
-
 import pyannote.audio.core.inference
 
-# --- ХОТФИКС №3: Учим старый Pyannote понимать новые команды от WhisperX ---
+# --- Хотфикс №3: Pyannote + WhisperX token → use_auth_token ---
 _orig_pipeline_from_pretrained = pyannote.audio.Pipeline.from_pretrained
 def from_pretrained(cls, *args, **kwargs):
     if 'token' in kwargs:
@@ -48,31 +53,29 @@ def from_pretrained(cls, *args, **kwargs):
     return _orig_pipeline_from_pretrained(cls, *args, **kwargs)
 pyannote.audio.Pipeline.from_pretrained = from_pretrained
 
-# --- ХОТФИКС ДЛЯ НЕСОВМЕСТИМОСТИ WHISPERX И PYANNOTE ---
-# Перехватываем функцию инициализации и удаляем аргумент 'token', из-за которого всё падает
+# --- Хотфикс для Inference.__init__ ---
 _original_inference_init = pyannote.audio.core.inference.Inference.__init__
 
 def _patched_inference_init(self, *args, **kwargs):
-    kwargs.pop("token", None)  # Удаляем проблемный аргумент
+    kwargs.pop("token", None)
     _original_inference_init(self, *args, **kwargs)
 
 pyannote.audio.core.inference.Inference.__init__ = _patched_inference_init
-# -------------------------------------------------------
 
 # --- Конфигурация ---
-NGROK_TOKEN = os.environ.get("NGROK_TOKEN", "xxxx")
-NGROK_DOMAIN = os.environ.get("NGROK_DOMAIN", "xxx.ngrok-free.app")
-HF_TOKEN = os.environ.get("HF_TOKEN", "xxx") # Обязательно для диаризации!
+NGROK_TOKEN = "xxxx"
+NGROK_DOMAIN = "gladly-mint-dragon.ngrok-free.app"
+HF_TOKEN = "xxx"
 PORT = 8000
 UPLOAD_DIR = "temp_audio"
+MAX_QUEUE_SIZE = 20
 
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# --- Глобальные переменные состояния ---
+# --- Глобальные переменные ---
 tasks_db = {}
-task_queue = asyncio.Queue()
+task_queue = asyncio.Queue(maxsize=MAX_QUEUE_SIZE)
 
-# Переменные для моделей
 device = "cuda" if torch.cuda.is_available() else "cpu"
 compute_type = "float16" if device == "cuda" else "int8"
 whisper_model = None
@@ -80,127 +83,129 @@ align_model = None
 align_metadata = None
 diarize_model = None
 
-# Словарь терминов, чтобы не было "параметелоса" и "шветишек"
 IT_PROMPT = "ПСИ, стенд, IFT, DEV, DPM, Prometheus, JWT, Кубер, Дженкинс, пром, неймспейс."
 
-# --- Функция расшифровки с WhisperX ---
+
+def log_vram(tag: str, task_id: str):
+    if device == "cuda":
+        allocated = torch.cuda.memory_allocated() / 1024**3
+        reserved  = torch.cuda.memory_reserved()  / 1024**3
+        print(f"[{task_id[:8]}] 🖥️  VRAM {tag}: {allocated:.2f}GB allocated / {reserved:.2f}GB reserved")
+
+
 def process_audio(file_path: str, task_id: str) -> str:
     print(f"[{task_id[:8]}] 🎙️  Начинаю транскрипцию: {os.path.basename(file_path)}")
     start_time = time.time()
-    
-    # Загружаем аудио в память (WhisperX делает это через ffmpeg)
+
+    log_vram("before", task_id)
+
     audio = whisperx.load_audio(file_path)
-    duration = len(audio) / 16000 # sample_rate = 16000
-    
-    # 1. ТРАНСКРИПЦИЯ (Whisper + VAD)
-    print(f"[{task_id[:8]}] 1/3 📝  Транскрипция текста (Batch size: 16)...")
+    duration = len(audio) / 16000
+
+    # 1. ТРАНСКРИПЦИЯ
+    print(f"[{task_id[:8]}] 1/3 📝  Транскрипция текста (Batch size: 12)...")
     whisper_model.model.hotwords = [w.strip() for w in IT_PROMPT.split(",")]
+    result = whisper_model.transcribe(audio, batch_size=12, language="ru")
+    log_vram("after transcribe", task_id)
 
-    # A4000 легко тянет batch_size=16, что делает процесс очень быстрым
-    result = whisper_model.transcribe(
-        audio, 
-        batch_size=16, 
-        language="ru"
-    )
-
-    
-    # 2. ВЫРАВНИВАНИЕ (Точные таймкоды для каждого слова)
+    # 2. ВЫРАВНИВАНИЕ
     print(f"[{task_id[:8]}] 2/3 ⏱️  Синхронизация таймкодов (Alignment)...")
     result = whisperx.align(
-        result["segments"], 
-        align_model, 
-        align_metadata, 
-        audio, 
-        device, 
+        result["segments"],
+        align_model,
+        align_metadata,
+        audio,
+        device,
         return_char_alignments=False
     )
-    
-    # 3. ДИАРИЗАЦИЯ (Определение спикеров)
+    log_vram("after align", task_id)
+
+    # 3. ДИАРИЗАЦИЯ
     print(f"[{task_id[:8]}] 3/3 🗣️  Распознавание спикеров (Pyannote)...")
     diarize_segments = diarize_model(audio)
-    
-    # Объединяем текст и спикеров
     result = whisperx.assign_word_speakers(diarize_segments, result)
-    
+    log_vram("after diarize", task_id)
+
+    # Форматирование
     print(f"[{task_id[:8]}] 🛠️  Форматирование результата...")
     collected = []
-    
     for segment in tqdm(result["segments"]):
-        # Если модель не смогла определить спикера, ставим UNKNOWN
-        speaker = segment.get("speaker", "SPEAKER_UNKNOWN")
-        # Форматируем секунды в MM:SS
+        speaker  = segment.get("speaker", "SPEAKER_UNKNOWN")
         start_td = datetime.timedelta(seconds=int(segment["start"]))
-        time_str = str(start_td)[2:] # Убираем часы, оставляем mm:ss
-        
-        text = segment["text"].strip()
-        
-        # Сохраняем в формате "00:00 Speaker 1: Текст"
+        time_str = str(start_td)[2:]
+        text     = segment["text"].strip()
         collected.append(f"{time_str} {speaker}: {text}")
-    
+
+    output = "\n".join(collected)
+
+    # --- Чистка памяти после задачи ---
+    del audio, result, diarize_segments
+    gc.collect()
+    torch.cuda.empty_cache()
+    log_vram("after cleanup", task_id)
+
     elapsed = time.time() - start_time
     rtf = duration / elapsed
     print(f"[{task_id[:8]}] ✅  Готово! Время: {elapsed:.1f}s, Скорость: {rtf:.1f}x realtime")
-    
-    return "\n".join(collected)
+
+    return output
 
 
-# --- Фоновый воркер ---
+async def cleanup_task(task_id: str, delay: int):
+    """Удаляем результат из памяти через delay секунд."""
+    await asyncio.sleep(delay)
+    tasks_db.pop(task_id, None)
+    print(f"[{task_id[:8]}] 🗑️  Удалён из tasks_db")
+
+
 async def gpu_worker():
     while True:
         task_id, file_path = await task_queue.get()
         tasks_db[task_id]["status"] = "processing"
 
         try:
-            # Запускаем тяжелую синхронную функцию в отдельном потоке
             result = await asyncio.to_thread(process_audio, file_path, task_id)
             tasks_db[task_id]["status"] = "completed"
             tasks_db[task_id]["result"] = result
+            # Чистим результат из RAM через 1 час
+            asyncio.create_task(cleanup_task(task_id, delay=3600))
         except Exception as e:
             tasks_db[task_id]["status"] = "failed"
             tasks_db[task_id]["result"] = str(e)
             print(f"[{task_id[:8]}] ❌  Ошибка: {e}\n")
             traceback.print_exc()
+            sentry_sdk.capture_exception(e)
+            # Чистим failed через 5 минут
+            asyncio.create_task(cleanup_task(task_id, delay=300))
+            # При OOM — принудительная чистка
+            gc.collect()
+            torch.cuda.empty_cache()
         finally:
             if os.path.exists(file_path):
                 os.remove(file_path)
             task_queue.task_done()
-            
 
 
-# --- Жизненный цикл приложения ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global whisper_model, align_model, align_metadata, diarize_model
-    
+
     print("🚀 Загрузка моделей в VRAM (A4000)...")
-    
-    # 1. Базовая модель Whisper (Large-v3 отлично влезает в 16GB)
-    whisper_model = whisperx.load_model(
-        "large-v3", 
-        device, 
-        compute_type=compute_type
-    )
+
+    whisper_model = whisperx.load_model("large-v3", device, compute_type=compute_type)
     print("✅ Whisper Large-V3 загружен")
 
-    # 2. Модель выравнивания (для русского языка)
-    align_model, align_metadata = whisperx.load_align_model(
-        language_code="ru", 
-        device=device
-    )
+    align_model, align_metadata = whisperx.load_align_model(language_code="ru", device=device)
     print("✅ Wav2Vec2 (RU) загружен")
 
-    # 3. Модель диаризации (Pyannote)
     from whisperx.diarize import DiarizationPipeline
-    
     print("Загружаю Pyannote Diarization...")
-    # Для новых версий whisperx (используют token)
     diarize_model = DiarizationPipeline(
         model_name="pyannote/speaker-diarization-3.1",
         device=device
     )
     print("✅ Pyannote Diarization загружена")
 
-    # Ngrok туннель
     conf.get_default().auth_token = NGROK_TOKEN
     tunnel = ngrok.connect(PORT, domain=NGROK_DOMAIN)
     print(f"✅ Сервер доступен: {tunnel.public_url}")
@@ -211,14 +216,12 @@ async def lifespan(app: FastAPI):
 
     worker_task.cancel()
     ngrok.disconnect(tunnel.public_url)
-    
-    # Очистка памяти
-    import gc
+
     del whisper_model, align_model, diarize_model
     gc.collect()
     torch.cuda.empty_cache()
 
-# --- Инициализация FastAPI ---
+
 app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
@@ -229,24 +232,53 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.post("/transcribe")
 async def create_transcription_task(file: UploadFile = File(...)):
-    task_id = str(uuid.uuid4())
+    if task_queue.full():
+        raise HTTPException(
+            status_code=429,
+            detail=f"Queue is full ({MAX_QUEUE_SIZE} tasks). Try later."
+        )
+
+    task_id   = str(uuid.uuid4())
     file_path = os.path.join(UPLOAD_DIR, f"{task_id}_{file.filename}")
 
     with open(file_path, "wb") as buffer:
         buffer.write(await file.read())
 
-    tasks_db[task_id] = {"status": "pending", "result": None}
+    tasks_db[task_id] = {
+        "status": "pending",
+        "result": None,
+        "queue_position": task_queue.qsize() + 1,
+    }
     await task_queue.put((task_id, file_path))
 
-    return {"task_id": task_id, "status": "pending"}
+    return {
+        "task_id": task_id,
+        "status": "pending",
+        "queue_position": tasks_db[task_id]["queue_position"],
+    }
+
 
 @app.get("/status/{task_id}")
 async def get_task_status(task_id: str):
     if task_id not in tasks_db:
         raise HTTPException(status_code=404, detail="Task not found")
     return tasks_db[task_id]
+
+
+@app.get("/queue")
+async def get_queue_status():
+    return {
+        "queue_size":  task_queue.qsize(),
+        "max_size":    MAX_QUEUE_SIZE,
+        "tasks": {
+            tid: info["status"]
+            for tid, info in tasks_db.items()
+        },
+    }
+
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=PORT)

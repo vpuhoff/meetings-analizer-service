@@ -304,6 +304,18 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
       cellRenderer: (params: ICellRendererParams) => <SyncStatusRenderer value={params.value} />,
     },
     {
+      headerName: 'In VS',
+      minWidth: 80,
+      sortable: true,
+      filter: 'agTextColumnFilter',
+      valueGetter: (params: ValueGetterParams<KBDocument>) => params.data?.openai_file_id ? 'Yes' : 'No',
+      cellRenderer: (params: ICellRendererParams) => (
+        <span className={params.value === 'Yes' ? 'text-emerald-600 font-medium' : 'text-slate-400'}>
+          {params.value === 'Yes' ? '✓' : '—'}
+        </span>
+      ),
+    },
+    {
       headerName: 'Actions',
       pinned: 'right',
       minWidth: 150,
