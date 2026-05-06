@@ -26,10 +26,10 @@ interface ChatWindowProps {
 }
 
 const CHAT_MODELS = [
-  { id: 'gpt-5.5', label: 'GPT-5.5' },
-  { id: 'gpt-5.4', label: 'GPT-5.4' },
-  { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
-  { id: 'gpt-5.4-nano', label: 'GPT-5.4 Nano' },
+  { id: 'gpt-4.1', label: 'GPT-4.1' },
+  { id: 'gpt-4.1-mini', label: 'GPT-4.1 Mini' },
+  { id: 'gpt-4o', label: 'GPT-4o' },
+  { id: 'gpt-4o-mini', label: 'GPT-4o Mini' },
 ] as const;
 
 const ChatWindow: React.FC<ChatWindowProps> = ({ userId, project, thread, settings, onThreadCreated }) => {
