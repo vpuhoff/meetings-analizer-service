@@ -15,6 +15,7 @@ interface UseAssistantChatOptions {
   thread: ChatThread | null;
   settings: UserSettings | null;
   onThreadCreated: (thread: ChatThread) => void;
+  model?: string;
 }
 
 interface UseAssistantChatReturn {
@@ -51,6 +52,7 @@ export function useAssistantChat({
   thread,
   settings,
   onThreadCreated,
+  model,
 }: UseAssistantChatOptions): UseAssistantChatReturn {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [annotationsMap, setAnnotationsMap] = useState<Record<string, string>>({});
@@ -139,6 +141,7 @@ export function useAssistantChat({
           vectorStoreId: project.openai_vector_store_id ?? null,
           projectContext: project.context ?? null,
           teamContext: project.team ?? null,
+          model: model || undefined,
         }),
       });
 
@@ -226,7 +229,7 @@ export function useAssistantChat({
     } finally {
       setIsLoading(false);
     }
-  }, [input, isLoading, settings, project, userId, onThreadCreated]);
+  }, [input, isLoading, settings, project, userId, onThreadCreated, model]);
 
   return { messages, annotationsMap, input, setInput, isLoading, error, sendMessage };
 }

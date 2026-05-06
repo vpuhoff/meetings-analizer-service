@@ -25,10 +25,18 @@ interface ChatWindowProps {
   onThreadCreated: (thread: ChatThread) => void;
 }
 
+const CHAT_MODELS = [
+  { id: 'gpt-5.5', label: 'GPT-5.5' },
+  { id: 'gpt-5.4', label: 'GPT-5.4' },
+  { id: 'gpt-5.4-mini', label: 'GPT-5.4 Mini' },
+  { id: 'gpt-5.4-nano', label: 'GPT-5.4 Nano' },
+] as const;
+
 const ChatWindow: React.FC<ChatWindowProps> = ({ userId, project, thread, settings, onThreadCreated }) => {
   const bottomRef = useRef<HTMLDivElement>(null);
   const [selectedKbDoc, setSelectedKbDoc] = useState<KBDocument | null>(null);
   const [citationNotFound, setCitationNotFound] = useState<string | null>(null);
+  const [chatModel, setChatModel] = useState<string>(CHAT_MODELS[1].id);
 
   const { messages, annotationsMap, input, setInput, isLoading, error, sendMessage } = useAssistantChat({
     userId,
@@ -36,6 +44,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ userId, project, thread, settin
     thread,
     settings,
     onThreadCreated,
+    model: chatModel,
   });
 
   const handleCitationClick = useCallback(async (fileId: string) => {
@@ -131,6 +140,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ userId, project, thread, settin
 
       {/* Input */}
       <div className="border-t border-slate-200 bg-white px-4 py-3 flex gap-2 items-end flex-shrink-0">
+        <select
+          value={chatModel}
+          onChange={e => setChatModel(e.target.value)}
+          disabled={isLoading}
+          className="flex-shrink-0 px-2 py-2 text-xs font-medium border border-slate-300 rounded-lg bg-white text-slate-600 focus:ring-2 focus:ring-brand-500 focus:border-brand-500 disabled:opacity-50 cursor-pointer"
+          title="Chat model"
+        >
+          {CHAT_MODELS.map(m => (
+            <option key={m.id} value={m.id}>{m.label}</option>
+          ))}
+        </select>
         <textarea
           value={input}
           onChange={e => setInput(e.target.value)}

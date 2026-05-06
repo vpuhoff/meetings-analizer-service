@@ -515,9 +515,10 @@ async function assistant(request: Request, env: any) {
       vectorStoreId?: string | null;
       projectContext?: string | null;
       teamContext?: string | null;
+      model?: string;
     };
 
-    const { message, threadId: incomingThreadId, assistant_id, openai_api_key, vectorStoreId, projectContext, teamContext } = body;
+    const { message, threadId: incomingThreadId, assistant_id, openai_api_key, vectorStoreId, projectContext, teamContext, model } = body;
 
     if (!openai_api_key) {
       return new Response(JSON.stringify({ error: 'openai_api_key is required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
@@ -570,6 +571,7 @@ async function assistant(request: Request, env: any) {
 
     // 3. Create streaming run
     const runBody: Record<string, unknown> = { assistant_id, stream: true };
+    if (model) runBody.model = model;
     if (additional_instructions) runBody.additional_instructions = additional_instructions;
 
     const runRes = await fetch(`${oaiBase}/threads/${threadId}/runs`, {
