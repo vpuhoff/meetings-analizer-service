@@ -59,7 +59,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
   const [loading, setLoading] = useState(true);
   const [viewDoc, setViewDoc] = useState<KBDocument | null>(null);
   const [editingDoc, setEditingDoc] = useState<KBDocument | null>(null);
-  const [syncing, setSyncing] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState<Set<string>>(new Set());
   const gridRef = useRef<AgGridReact>(null);
 
   useEffect(() => {
@@ -76,7 +76,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
   }, []);
 
   const handleSync = useCallback(async (doc: KBDocument) => {
-    setSyncing(doc.id);
+    setSyncing(prev => new Set(prev).add(doc.id));
     // Immediately set pending in Firestore (fire-and-forget UX)
     await saveKBDocument({ ...doc, sync_status: 'pending', updated_at: Date.now() });
     try {
@@ -123,7 +123,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
       await saveKBDocument({ ...doc, sync_status: 'failed', updated_at: Date.now() });
       alert(`Sync error: ${err.message}`);
     } finally {
-      setSyncing(null);
+      setSyncing(prev => { const next = new Set(prev); next.delete(doc.id); return next; });
     }
   }, [userId]);
 
@@ -150,7 +150,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
           </svg>
         </button>
-        {(doc.sync_status === 'out_of_sync' || doc.sync_status === 'failed') && syncing !== doc.id && (
+        {(doc.sync_status === 'out_of_sync' || doc.sync_status === 'failed') && !syncing.has(doc.id) && (
           <button
             onClick={() => handleSync(doc)}
             title="Push to OpenAI Vector Store"
@@ -161,7 +161,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
             </svg>
           </button>
         )}
-        {syncing === doc.id && (
+        {syncing.has(doc.id) && (
           <span className="p-1.5 text-yellow-500" title="Syncing…">
             <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
