@@ -85,7 +85,7 @@ align_model = None
 align_metadata = None
 diarize_model = None
 
-IT_PROMPT = "ПСИ, стенд, IFT, DEV, DPM, Prometheus, JWT, Кубер, Дженкинс, пром, неймспейс."
+IT_PROMPT = "ПСИ, стенд, IFT, DEV, Prometheus, JWT, Кубер, Дженкинс, пром, неймспейс."
 
 
 def log_vram(tag: str, task_id: str):
@@ -111,7 +111,11 @@ def process_audio(file_path: str, task_id: str) -> str:
     set_progress("transcription", 0)
     print(f"[{task_id[:8]}] 1/3 📝  Транскрипция текста...")
     whisper_model.model.hotwords = [w.strip() for w in IT_PROMPT.split(",")]
-    result = whisper_model.transcribe(audio, batch_size=12, language="ru")
+    result = whisper_model.transcribe(
+        audio,
+        batch_size=32,
+        language="ru",
+    )
     set_progress("transcription", 50)
     log_vram("after transcribe", task_id)
 
@@ -134,7 +138,12 @@ def process_audio(file_path: str, task_id: str) -> str:
         mapped = 70 + (pct / 100) * 30
         set_progress("diarization", mapped)
 
-    diarize_segments = diarize_model(audio, progress_callback=diarization_progress)
+    diarize_segments = diarize_model(
+        audio,
+        min_speakers=2,
+        max_speakers=6,  # сколько реально бывает на созвоне
+        progress_callback=diarization_progress
+    )
     result = whisperx.assign_word_speakers(diarize_segments, result)
     set_progress("diarization", 100)
     log_vram("after diarize", task_id)
@@ -204,7 +213,22 @@ async def lifespan(app: FastAPI):
 
     print("🚀 Загрузка моделей в VRAM (A4000)...")
 
-    whisper_model = whisperx.load_model("large-v3", device, compute_type=compute_type)
+    whisper_model = whisperx.load_model(
+        "large-v3", device,
+        compute_type=compute_type,
+        asr_options={
+            "beam_size": 5,
+            "temperatures": [0, 0.2, 0.4], 
+            "condition_on_previous_text": True,
+            "repetition_penalty": 1.2,
+            "no_speech_threshold": 0.6,
+            "compression_ratio_threshold": 2.4,
+        },
+        vad_options={
+            "vad_onset": 0.450,
+            "vad_offset": 0.363,
+        }
+    )
     print("✅ Whisper Large-V3 загружен")
 
     align_model, align_metadata = whisperx.load_align_model(language_code="ru", device=device)
