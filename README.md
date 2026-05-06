@@ -226,6 +226,14 @@ After first deploy: add your domain to **Firebase Console → Authentication →
 - `list` operations require collection-level rules, not just document-level.
 - Composite queries (`where` + `orderBy`) require indexes defined in `firestore.indexes.json`.
 
+### Free Transcription Mode
+
+The app supports a **Free** transcription mode (checkbox on the Extract tab). When enabled, audio files are sent to a self-hosted GPU worker running **WhisperX** instead of Gemini, so no API credits are consumed for transcription. Text files are still processed through Gemini as usual.
+
+The GPU worker is a standalone FastAPI service that runs Whisper Large-v3 + Pyannote speaker diarization on a CUDA GPU. Setup and API details: **[`gpu-worker/README.md`](gpu-worker/README.md)**.
+
+The worker URL is currently hardcoded in `services/geminiService.ts` (`FREE_TRANSCRIBE_URL`). Update it if your ngrok domain changes.
+
 ### AG Grid CSS
 
 - AG Grid requires explicit CSS imports — without them columns render as a vertical list:
