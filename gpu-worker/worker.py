@@ -14,6 +14,8 @@ import omegaconf
 from tqdm import tqdm
 import traceback
 import sentry_sdk
+from sentry_sdk.integrations.fastapi import FastApiIntegration
+from sentry_sdk.integrations.asyncio import AsyncioIntegration
 
 # --- Sentry ---
 sentry_sdk.init(
@@ -94,42 +96,53 @@ def log_vram(tag: str, task_id: str):
 
 
 def process_audio(file_path: str, task_id: str) -> str:
+    def set_progress(stage: str, pct: float):
+        tasks_db[task_id]["stage"] = stage
+        tasks_db[task_id]["progress"] = round(pct, 1)
+
     print(f"[{task_id[:8]}] 🎙️  Начинаю транскрипцию: {os.path.basename(file_path)}")
     start_time = time.time()
-
     log_vram("before", task_id)
 
     audio = whisperx.load_audio(file_path)
     duration = len(audio) / 16000
 
-    # 1. ТРАНСКРИПЦИЯ
-    print(f"[{task_id[:8]}] 1/3 📝  Транскрипция текста (Batch size: 12)...")
+    # 1. ТРАНСКРИПЦИЯ (0–50%)
+    set_progress("transcription", 0)
+    print(f"[{task_id[:8]}] 1/3 📝  Транскрипция текста...")
     whisper_model.model.hotwords = [w.strip() for w in IT_PROMPT.split(",")]
     result = whisper_model.transcribe(audio, batch_size=12, language="ru")
+    set_progress("transcription", 50)
     log_vram("after transcribe", task_id)
 
-    # 2. ВЫРАВНИВАНИЕ
-    print(f"[{task_id[:8]}] 2/3 ⏱️  Синхронизация таймкодов (Alignment)...")
+    # 2. ВЫРАВНИВАНИЕ (50–70%)
+    set_progress("alignment", 50)
+    print(f"[{task_id[:8]}] 2/3 ⏱️  Синхронизация таймкодов...")
     result = whisperx.align(
-        result["segments"],
-        align_model,
-        align_metadata,
-        audio,
-        device,
-        return_char_alignments=False
+        result["segments"], align_model, align_metadata,
+        audio, device, return_char_alignments=False
     )
+    set_progress("alignment", 70)
     log_vram("after align", task_id)
 
-    # 3. ДИАРИЗАЦИЯ
-    print(f"[{task_id[:8]}] 3/3 🗣️  Распознавание спикеров (Pyannote)...")
-    diarize_segments = diarize_model(audio)
+    # 3. ДИАРИЗАЦИЯ (70–100%) — тут есть реальный колбэк!
+    set_progress("diarization", 70)
+    print(f"[{task_id[:8]}] 3/3 🗣️  Распознавание спикеров...")
+
+    def diarization_progress(pct: float):
+        # pct приходит 0–100 от pyannote, маппим в 70–100
+        mapped = 70 + (pct / 100) * 30
+        set_progress("diarization", mapped)
+
+    diarize_segments = diarize_model(audio, progress_callback=diarization_progress)
     result = whisperx.assign_word_speakers(diarize_segments, result)
+    set_progress("diarization", 100)
     log_vram("after diarize", task_id)
 
     # Форматирование
-    print(f"[{task_id[:8]}] 🛠️  Форматирование результата...")
+    set_progress("formatting", 100)
     collected = []
-    for segment in tqdm(result["segments"]):
+    for segment in result["segments"]:
         speaker  = segment.get("speaker", "SPEAKER_UNKNOWN")
         start_td = datetime.timedelta(seconds=int(segment["start"]))
         time_str = str(start_td)[2:]
@@ -138,7 +151,6 @@ def process_audio(file_path: str, task_id: str) -> str:
 
     output = "\n".join(collected)
 
-    # --- Чистка памяти после задачи ---
     del audio, result, diarize_segments
     gc.collect()
     torch.cuda.empty_cache()
@@ -250,8 +262,11 @@ async def create_transcription_task(file: UploadFile = File(...)):
     tasks_db[task_id] = {
         "status": "pending",
         "result": None,
+        "progress": 0,
+        "stage": None,
         "queue_position": task_queue.qsize() + 1,
     }
+
     await task_queue.put((task_id, file_path))
 
     return {
