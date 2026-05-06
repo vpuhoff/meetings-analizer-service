@@ -39,33 +39,37 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ userId, project, thread, settin
   });
 
   const handleCitationClick = useCallback(async (fileId: string) => {
-    // 1. Try matching by openai_file_id (OpenAI file upload ID stored during KB sync)
-    const q = query(collection(db, 'knowledge_base'), where('openai_file_id', '==', fileId));
-    const snap = await getDocs(q);
-    if (!snap.empty) {
-      setSelectedKbDoc(snap.docs[0].data() as KBDocument);
-      return;
-    }
+    try {
+      // 1. Try matching by openai_file_id (OpenAI file upload ID stored during KB sync)
+      //    Must include userId filter — Firestore rules require isDocOwner()
+      const q = query(collection(db, 'knowledge_base'), where('userId', '==', userId), where('openai_file_id', '==', fileId));
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        setSelectedKbDoc(snap.docs[0].data() as KBDocument);
+        return;
+      }
 
-    // 2. Fallback: the fileId here is the OpenAI file ID, but the annotation marker
-    //    【N:M†<kb_doc_id>.md】 embeds the KB doc ID in the filename.
-    //    annotationsMap key is the raw marker text — extract doc_id from it.
-    const markerEntry = Object.entries(annotationsMap).find(([, v]) => v === fileId);
-    if (markerEntry) {
-      const match = markerEntry[0].match(/【[^†]*†([^】]+)\.md】/);
-      if (match) {
-        const kbDocId = match[1];
-        const docSnap = await getDoc(doc(db, 'knowledge_base', kbDocId));
-        if (docSnap.exists()) {
-          setSelectedKbDoc(docSnap.data() as KBDocument);
-          return;
+      // 2. Fallback: the annotation marker 【N:M†<kb_doc_id>.md】 embeds the KB doc ID in the filename.
+      //    annotationsMap key is the raw marker text — extract doc_id from it.
+      const markerEntry = Object.entries(annotationsMap).find(([, v]) => v === fileId);
+      if (markerEntry) {
+        const match = markerEntry[0].match(/【[^†]*†([^】]+)\.md】/);
+        if (match) {
+          const kbDocId = match[1];
+          const docSnap = await getDoc(doc(db, 'knowledge_base', kbDocId));
+          if (docSnap.exists()) {
+            setSelectedKbDoc(docSnap.data() as KBDocument);
+            return;
+          }
         }
       }
+    } catch (err) {
+      console.error('[Citation] lookup failed:', err);
     }
 
     setCitationNotFound(fileId);
     setTimeout(() => setCitationNotFound(null), 3000);
-  }, [annotationsMap]);
+  }, [annotationsMap, userId]);
 
   // Auto-scroll
   useEffect(() => {
