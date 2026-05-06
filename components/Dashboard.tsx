@@ -22,6 +22,7 @@ interface DashboardProps {
 const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanalyze, onAskQuestion, onSaveToKB, kbDocExists, kbDoc, onViewKBDoc, onSyncKBDoc, resultVersion, meetingDate, onDateChange }) => {
   const [feedback, setFeedback] = useState("");
   const [showTranscript, setShowTranscript] = useState(false);
+  const [localDate, setLocalDate] = useState<string>(meetingDate ? new Date(meetingDate).toISOString().slice(0, 10) : '');
   const [isExporting, setIsExporting] = useState(false);
   const [isSavingToKB, setIsSavingToKB] = useState(false);
   const [kbSaved, setKbSaved] = useState(false);
@@ -42,14 +43,16 @@ const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanal
     }
   };
 
-  // Format timestamp to YYYY-MM-DD for <input type="date">
-  const dateValue = meetingDate
-    ? new Date(meetingDate).toISOString().slice(0, 10)
-    : '';
+  // Sync local date when prop changes (e.g. after save or new meeting)
+  useEffect(() => {
+    setLocalDate(meetingDate ? new Date(meetingDate).toISOString().slice(0, 10) : '');
+  }, [meetingDate]);
 
-  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.value || !onDateChange) return;
-    onDateChange(new Date(e.target.value).getTime());
+  const dateDirty = localDate !== (meetingDate ? new Date(meetingDate).toISOString().slice(0, 10) : '');
+
+  const handleDateSave = () => {
+    if (!localDate || !onDateChange) return;
+    onDateChange(new Date(localDate).getTime());
   };
 
   useEffect(() => {
@@ -135,11 +138,19 @@ const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanal
             </svg>
             <input
               type="date"
-              value={dateValue}
-              onChange={handleDateChange}
+              value={localDate}
+              onChange={e => setLocalDate(e.target.value)}
               disabled={!onDateChange}
               className="text-sm text-slate-600 border border-slate-200 rounded-lg px-2 py-1 focus:ring-2 focus:ring-brand-400 focus:border-brand-400 disabled:opacity-50 disabled:cursor-default bg-white"
             />
+            {dateDirty && onDateChange && (
+              <button
+                onClick={handleDateSave}
+                className="text-xs font-medium px-2 py-1 rounded bg-brand-600 text-white hover:bg-brand-700 transition-colors"
+              >
+                Save
+              </button>
+            )}
           </div>
         </div>
 
