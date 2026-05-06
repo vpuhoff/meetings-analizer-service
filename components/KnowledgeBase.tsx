@@ -60,6 +60,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
   const [viewDoc, setViewDoc] = useState<KBDocument | null>(null);
   const [editingDoc, setEditingDoc] = useState<KBDocument | null>(null);
   const [syncing, setSyncing] = useState<Set<string>>(new Set());
+  const [unsyncing, setUnsyncing] = useState<Set<string>>(new Set());
   const gridRef = useRef<AgGridReact>(null);
 
   useEffect(() => {
@@ -127,6 +128,37 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
     }
   }, [userId]);
 
+  const handleUnsync = useCallback(async (doc: KBDocument) => {
+    if (!doc.openai_file_id) return;
+    if (!confirm('Remove this document from the Vector Store? The KB record will be kept.')) return;
+    setUnsyncing(prev => new Set(prev).add(doc.id));
+    try {
+      const settings = await getUserSettings(userId);
+      if (!settings?.openaiApiKey) throw new Error('OpenAI API key not configured.');
+      const project = doc.project_id ? await getProject(doc.project_id) : null;
+      if (!project?.openai_vector_store_id) throw new Error('No Vector Store ID set for this project.');
+
+      const apiBase = (import.meta as any).env?.VITE_API_BASE_URL ?? '';
+      const res = await fetch(`${apiBase}/api/kb/unsync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          openai_file_id: doc.openai_file_id,
+          vector_store_id: project.openai_vector_store_id,
+          openai_api_key: settings.openaiApiKey,
+        }),
+      });
+      const data = await res.json() as { success?: boolean; error?: string };
+      if (!res.ok || !data.success) throw new Error(data.error || 'Unsync failed');
+
+      await saveKBDocument({ ...doc, sync_status: 'out_of_sync', openai_file_id: null, updated_at: Date.now() });
+    } catch (err: any) {
+      alert(`Unsync error: ${err.message}`);
+    } finally {
+      setUnsyncing(prev => { const next = new Set(prev); next.delete(doc.id); return next; });
+    }
+  }, [userId]);
+
   const ActionsRenderer = useCallback((params: ICellRendererParams) => {
     const doc: KBDocument = params.data;
     return (
@@ -169,6 +201,25 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
             </svg>
           </span>
         )}
+        {doc.sync_status === 'synced' && !unsyncing.has(doc.id) && doc.openai_file_id && (
+          <button
+            onClick={() => handleUnsync(doc)}
+            title="Remove from Vector Store"
+            className="p-1.5 rounded hover:bg-slate-100 text-slate-500 hover:text-red-500 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4 4l-4-4m0 0l4-4m-4 4H4" />
+            </svg>
+          </button>
+        )}
+        {unsyncing.has(doc.id) && (
+          <span className="p-1.5 text-yellow-500" title="Removing from VS…">
+            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
+            </svg>
+          </span>
+        )}
         <button
           onClick={() => handleDelete(doc.id)}
           title="Delete"
@@ -180,7 +231,7 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ userId }) => {
         </button>
       </div>
     );
-  }, [handleDelete, handleSync, syncing, setViewDoc, setEditingDoc]);
+  }, [handleDelete, handleSync, handleUnsync, syncing, unsyncing, setViewDoc, setEditingDoc]);
 
   const colDefs: ColDef<KBDocument>[] = [
     {

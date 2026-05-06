@@ -500,6 +500,60 @@ async function kbSync(request: Request, env: any) {
   }
 }
 
+// KB Unsync: remove document from OpenAI Vector Store
+async function kbUnsync(request: Request, env: any) {
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  try {
+    const body = await request.json() as {
+      openai_file_id: string;
+      vector_store_id: string;
+      openai_api_key: string;
+    };
+    const { openai_file_id, vector_store_id, openai_api_key } = body;
+
+    if (!openai_api_key || !vector_store_id || !openai_file_id) {
+      return new Response(JSON.stringify({ error: 'openai_api_key, vector_store_id and openai_file_id are required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    const oaiHeaders = {
+      'Authorization': `Bearer ${openai_api_key}`,
+      'Content-Type': 'application/json',
+    };
+
+    // 1. Delete file from vector store
+    const delVsRes = await fetch(`https://api.openai.com/v1/vector_stores/${vector_store_id}/files/${openai_file_id}`, {
+      method: 'DELETE',
+      headers: oaiHeaders,
+    });
+    if (!delVsRes.ok && delVsRes.status !== 404) {
+      const err = await delVsRes.json().catch(() => ({})) as { error?: { message?: string } };
+      throw new Error(err.error?.message || `Failed to remove file from vector store (${delVsRes.status})`);
+    }
+
+    // 2. Delete the file from OpenAI storage
+    const delFileRes = await fetch(`https://api.openai.com/v1/files/${openai_file_id}`, {
+      method: 'DELETE',
+      headers: oaiHeaders,
+    });
+    // Ignore 404 — file may already be gone
+    if (!delFileRes.ok && delFileRes.status !== 404) {
+      const err = await delFileRes.json().catch(() => ({})) as { error?: { message?: string } };
+      // Non-fatal: file removed from VS, just couldn't delete the file object
+      console.warn('[kbUnsync] file delete warning:', err.error?.message || delFileRes.status);
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (err: any) {
+    return new Response(JSON.stringify({ error: err.message || 'KB unsync failed' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
+
 // Assistant: streaming chat with OpenAI Assistants API
 async function assistant(request: Request, env: any) {
   if (request.method !== 'POST') {
@@ -678,6 +732,8 @@ export default {
       return withCors(await markdown(request, env));
     } else if (path === "/api/kb/sync") {
       return withCors(await kbSync(request, env));
+    } else if (path === "/api/kb/unsync") {
+      return withCors(await kbUnsync(request, env));
     } else if (path === "/api/assistant") {
       return withCors(await assistant(request, env));
     } else if (path === "/api/assistant/messages") {
