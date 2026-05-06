@@ -103,12 +103,15 @@ export const analyzeMeeting = async (
         // Free transcription service — no chunking needed, service handles long audio
         reportProgress(`Transcribing (free) ${fileIndex + 1}/${audioFiles.length}...`);
         const transcriptText = await freeTranscribe(audioFile);
+        // Always create segments for display in Dashboard
         const segments = parseTranscriptText(transcriptText);
-        if (segments.length > 0 && segments.some(s => s.timestamp !== '00:00' || s.speaker !== 'Speaker')) {
+        if (segments.length > 0) {
           allTranscriptSegments.push(...segments);
         } else {
-          rawTextParts.push(`--- ${audioFile.name} ---\n${transcriptText}`);
+          allTranscriptSegments.push({ timestamp: '00:00', speaker: 'Speaker', text: transcriptText });
         }
+        // Also pass raw text to AI — free service returns plain text without speakers/timestamps
+        rawTextParts.push(`--- ${audioFile.name} ---\n${transcriptText}`);
         completedSteps++;
         reportProgress(`Transcribed (free) ${fileIndex + 1}/${audioFiles.length}`);
       } else if (needsChunking(audioFile, MAX_CHUNK_DURATION)) {
@@ -158,13 +161,13 @@ export const analyzeMeeting = async (
       const textContent = await readTextFile(textFile);
       // Try structured parsing first; if it yields segments, use them
       const segments = parseTranscriptText(textContent);
-      if (segments.length > 0 && segments.some(s => s.timestamp !== '00:00' || s.speaker !== 'Speaker')) {
-        // Looks like a real transcript with timestamps/speakers
+      if (segments.length > 0) {
         allTranscriptSegments.push(...segments);
       } else {
-        // Plain text (md, notes, etc.) — pass raw to AI
-        rawTextParts.push(`--- ${textFile.name} ---\n${textContent}`);
+        allTranscriptSegments.push({ timestamp: '00:00', speaker: 'Speaker', text: textContent });
       }
+      // Always pass raw text to AI for best analysis quality
+      rawTextParts.push(`--- ${textFile.name} ---\n${textContent}`);
       completedSteps++;
       reportProgress(`Read ${textFile.name}`);
     }

@@ -405,19 +405,33 @@ const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanal
         {showTranscript && (
             <div className="mt-4 p-5 bg-slate-50 rounded-lg border border-slate-200 max-h-96 overflow-y-auto custom-scrollbar">
                 {data.transcript && data.transcript.length > 0 ? (
-                    <div className="space-y-4">
-                        {data.transcript.map((seg, idx) => (
-                            <div key={idx} className="flex gap-4">
-                                <div className="flex-shrink-0 w-12 text-xs font-mono text-slate-400 pt-1 text-right">
-                                    {seg.timestamp}
+                    (() => {
+                      // Detect plain-text transcript: all segments have timestamp 00:00 and speaker "Speaker"
+                      const isPlainText = data.transcript.length <= 2 &&
+                        data.transcript.every(s => s.timestamp === '00:00' && s.speaker === 'Speaker');
+                      if (isPlainText) {
+                        return (
+                          <div className="text-sm text-slate-600 leading-relaxed whitespace-pre-wrap">
+                            {data.transcript.map(s => s.text).join('\n\n')}
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="space-y-4">
+                            {data.transcript.map((seg, idx) => (
+                                <div key={idx} className="flex gap-4">
+                                    <div className="flex-shrink-0 w-12 text-xs font-mono text-slate-400 pt-1 text-right">
+                                        {seg.timestamp}
+                                    </div>
+                                    <div className="flex-1">
+                                        <div className="text-sm font-bold text-slate-700 mb-0.5">{seg.speaker}</div>
+                                        <div className="text-sm text-slate-600 leading-relaxed">{seg.text}</div>
+                                    </div>
                                 </div>
-                                <div className="flex-1">
-                                    <div className="text-sm font-bold text-slate-700 mb-0.5">{seg.speaker}</div>
-                                    <div className="text-sm text-slate-600 leading-relaxed">{seg.text}</div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
+                            ))}
+                        </div>
+                      );
+                    })()
                 ) : (
                     <p className="text-slate-400 italic">No transcript available.</p>
                 )}
