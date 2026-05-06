@@ -41,6 +41,7 @@ const App: React.FC = () => {
   const [resultVersion, setResultVersion] = useState(0);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [useFreeTranscription, setUseFreeTranscription] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
 
   // Auth & Navigation State
@@ -156,7 +157,8 @@ const App: React.FC = () => {
         (percent, message) => {
           setProgressPercent(percent);
           setProgressMessage(message);
-        }
+        },
+        useFreeTranscription
       );
       
       setResult(data);
@@ -239,7 +241,8 @@ const App: React.FC = () => {
             (percent, message) => {
               setProgressPercent(percent);
               setProgressMessage(message);
-            }
+            },
+            useFreeTranscription
         );
         setResult(data);
         setStatus('completed');
@@ -598,6 +601,18 @@ const App: React.FC = () => {
               </div>
 
               <Dropzone onFilesSelect={handleFilesSelect} />
+
+              <label className="mt-3 flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={useFreeTranscription}
+                  onChange={e => setUseFreeTranscription(e.target.checked)}
+                  className="w-4 h-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <span className="text-sm text-slate-600">
+                  Free transcription <span className="text-xs text-slate-400">(external service, no Gemini credits for audio)</span>
+                </span>
+              </label>
               
               <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6 text-center">
                  <div className="p-4 bg-white rounded-lg shadow-sm border border-slate-100">

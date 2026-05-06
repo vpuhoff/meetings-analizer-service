@@ -30,13 +30,38 @@ const readTextFile = (file: File): Promise<string> => {
     });
 };
 
+const FREE_TRANSCRIBE_URL = 'https://gladly-mint-dragon.ngrok-free.app';
+
+async function freeTranscribe(file: File): Promise<string> {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const uploadRes = await fetch(`${FREE_TRANSCRIBE_URL}/transcribe`, {
+    method: 'POST',
+    body: formData,
+  });
+  if (!uploadRes.ok) throw new Error(`Free transcription upload failed (${uploadRes.status})`);
+  const { task_id } = await uploadRes.json() as { task_id: string };
+
+  // Poll for result
+  while (true) {
+    await new Promise(r => setTimeout(r, 2000));
+    const statusRes = await fetch(`${FREE_TRANSCRIBE_URL}/status/${task_id}`);
+    const data = await statusRes.json() as { status: string; result: string | null };
+    if (data.status === 'completed') return data.result || '';
+    if (data.status === 'failed') throw new Error(data.result || 'Free transcription failed');
+    // pending / processing — continue polling
+  }
+}
+
 export const analyzeMeeting = async (
   files: File[], 
   language: string = "English", 
   projectContext?: string, 
   teamContext?: string, 
   feedback?: string, 
-  onProgress?: (percent: number, message: string) => void
+  onProgress?: (percent: number, message: string) => void,
+  useFreeTranscription?: boolean
 ): Promise<MeetingAnalysis> => {
   try {
     // Separate audio and text files
@@ -69,11 +94,24 @@ export const analyzeMeeting = async (
 
     // Process audio files with chunking if needed
     const allTranscriptSegments: TranscriptSegment[] = [];
+    let rawTextParts: string[] = [];
     
     for (let fileIndex = 0; fileIndex < audioFiles.length; fileIndex++) {
       const audioFile = audioFiles[fileIndex];
-      
-      if (needsChunking(audioFile, MAX_CHUNK_DURATION)) {
+
+      if (useFreeTranscription) {
+        // Free transcription service — no chunking needed, service handles long audio
+        reportProgress(`Transcribing (free) ${fileIndex + 1}/${audioFiles.length}...`);
+        const transcriptText = await freeTranscribe(audioFile);
+        const segments = parseTranscriptText(transcriptText);
+        if (segments.length > 0 && segments.some(s => s.timestamp !== '00:00' || s.speaker !== 'Speaker')) {
+          allTranscriptSegments.push(...segments);
+        } else {
+          rawTextParts.push(`--- ${audioFile.name} ---\n${transcriptText}`);
+        }
+        completedSteps++;
+        reportProgress(`Transcribed (free) ${fileIndex + 1}/${audioFiles.length}`);
+      } else if (needsChunking(audioFile, MAX_CHUNK_DURATION)) {
         // Split into chunks
         reportProgress(`Splitting audio ${fileIndex + 1}/${audioFiles.length}...`);
         const chunks = await splitAudioFile(audioFile);
@@ -115,7 +153,6 @@ export const analyzeMeeting = async (
     }
 
     // Process text files — pass raw text, let the AI parse it
-    let rawTextParts: string[] = [];
     for (const textFile of textFiles) {
       reportProgress(`Reading ${textFile.name}...`);
       const textContent = await readTextFile(textFile);
