@@ -114,12 +114,20 @@ export const analyzeMeeting = async (
       }
     }
 
-    // Process text files
+    // Process text files — pass raw text, let the AI parse it
+    let rawTextParts: string[] = [];
     for (const textFile of textFiles) {
       reportProgress(`Reading ${textFile.name}...`);
       const textContent = await readTextFile(textFile);
+      // Try structured parsing first; if it yields segments, use them
       const segments = parseTranscriptText(textContent);
-      allTranscriptSegments.push(...segments);
+      if (segments.length > 0 && segments.some(s => s.timestamp !== '00:00' || s.speaker !== 'Speaker')) {
+        // Looks like a real transcript with timestamps/speakers
+        allTranscriptSegments.push(...segments);
+      } else {
+        // Plain text (md, notes, etc.) — pass raw to AI
+        rawTextParts.push(`--- ${textFile.name} ---\n${textContent}`);
+      }
       completedSteps++;
       reportProgress(`Read ${textFile.name}`);
     }
@@ -134,6 +142,7 @@ export const analyzeMeeting = async (
       },
       body: JSON.stringify({
         transcript: allTranscriptSegments,
+        rawText: rawTextParts.length > 0 ? rawTextParts.join('\n\n') : undefined,
         language,
         projectContext,
         teamContext,

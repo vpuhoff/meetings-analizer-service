@@ -112,7 +112,7 @@ async function analyze(request: Request, env: any) {
 
   try {
     const body = await request.json();
-    const { transcript, files, language, projectContext, teamContext, feedback } = body;
+    const { transcript, files, language, projectContext, teamContext, feedback, rawText } = body;
 
     const apiKey = env.GEMINI_API_KEY;
     if (!apiKey) {
@@ -190,6 +190,11 @@ For meetingTitle: generate a short, specific title (5-7 words max) that describe
 
     contentParts.push({ text: systemPrompt });
     contentParts.push({ text: `Analyze the following meeting transcript and extract key information:` });
+
+    if (rawText) {
+      // Raw text (md, notes, etc.) — pass as-is, let the model figure it out
+      contentParts.push({ text: rawText });
+    }
 
     fullTranscript.forEach(segment => {
       contentParts.push({ text: `[${segment.timestamp}] ${segment.speaker}: ${segment.text}` });
