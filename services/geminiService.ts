@@ -207,19 +207,55 @@ async function blobToBase64(blob: Blob): Promise<string> {
 function parseTranscriptText(text: string): TranscriptSegment[] {
   const segments: TranscriptSegment[] = [];
   const lines = text.split('\n');
-  const regex = /^\[(\d{2}:\d{2})\]\s+([^:]+):\s+(.+)$/;
-  
+  const regex = /^\[(\d{2}:\d{2}(?::\d{2})?)\]\s+([^:]+):\s+(.+)$/;
+  // Also match lines like "Speaker: text" without timestamp
+  const speakerLineRegex = /^([^:\[\]]+):\s+(.+)$/;
+
   for (const line of lines) {
-    const match = line.trim().match(regex);
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const match = trimmed.match(regex);
     if (match) {
       segments.push({
         timestamp: match[1],
         speaker: match[2].trim(),
         text: match[3].trim()
       });
+    } else {
+      // Try speaker-only format (no timestamp)
+      const speakerMatch = trimmed.match(speakerLineRegex);
+      if (speakerMatch && speakerMatch[1].length < 30) {
+        segments.push({
+          timestamp: '00:00',
+          speaker: speakerMatch[1].trim(),
+          text: speakerMatch[2].trim()
+        });
+      } else {
+        // Plain text line — assign to last speaker or "Speaker"
+        const lastSpeaker = segments.length > 0 ? segments[segments.length - 1].speaker : 'Speaker';
+        if (segments.length > 0 && segments[segments.length - 1].speaker === lastSpeaker) {
+          segments[segments.length - 1].text += '\n' + trimmed;
+        } else {
+          segments.push({
+            timestamp: segments.length > 0 ? segments[segments.length - 1].timestamp : '00:00',
+            speaker: lastSpeaker,
+            text: trimmed
+          });
+        }
+      }
     }
   }
-  
+
+  // If nothing parsed at all, treat entire content as one segment
+  if (segments.length === 0 && text.trim()) {
+    segments.push({
+      timestamp: '00:00',
+      speaker: 'Speaker',
+      text: text.trim()
+    });
+  }
+
   return segments;
 }
 
