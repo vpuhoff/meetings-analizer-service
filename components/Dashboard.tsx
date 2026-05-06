@@ -188,12 +188,31 @@ const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanal
               In KB ↗
             </button>
           )}
-          {onSyncKBDoc && kbDoc && (kbDoc.sync_status === 'out_of_sync' || kbDoc.sync_status === 'failed' || kbDoc.sync_status === 'synced') && (
+          {onSyncKBDoc && kbDoc && kbDoc.sync_status !== 'synced' && (
+            <button
+              onClick={handleSync}
+              disabled={isSyncing || kbDoc.sync_status === 'pending'}
+              title="Sync to Vector Store"
+              className="flex items-center p-2 text-sm font-medium text-slate-500 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 hover:text-emerald-600 hover:border-emerald-300 transition-colors disabled:opacity-50 disabled:cursor-wait"
+            >
+              {isSyncing || kbDoc.sync_status === 'pending' ? (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+              )}
+            </button>
+          )}
+          {onSyncKBDoc && kbDoc && kbDoc.sync_status === 'synced' && (
             <button
               onClick={handleSync}
               disabled={isSyncing}
-              title={kbDoc.sync_status === 'synced' ? 'Re-sync to Vector Store' : 'Sync to Vector Store'}
-              className="flex items-center p-2 text-sm font-medium text-slate-500 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 hover:text-emerald-600 hover:border-emerald-300 transition-colors disabled:opacity-50 disabled:cursor-wait"
+              title="Re-sync to Vector Store"
+              className="flex items-center p-2 text-sm font-medium text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 transition-colors disabled:opacity-50 disabled:cursor-wait"
             >
               {isSyncing ? (
                 <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
