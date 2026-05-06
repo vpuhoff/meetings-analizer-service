@@ -12,7 +12,7 @@ import KnowledgeBase from './components/KnowledgeBase';
 import KBViewModal from './components/KBViewModal';
 import KBEditorModal from './components/KBEditorModal';
 import { analyzeMeeting, askMeetingQuestion, generateKBDocument } from './services/geminiService';
-import { saveMeeting, saveMeetingVersion, Meeting, MeetingVersion, getProjects, Project, KBDocument, saveKBDocument, subscribeKBDocuments, getMeeting } from './services/meetingService';
+import { saveMeeting, saveMeetingVersion, Meeting, MeetingVersion, getProjects, Project, KBDocument, saveKBDocument, subscribeKBDocuments, getMeeting, getUserSettings, getProject } from './services/meetingService';
 import { MeetingAnalysis, ProcessingStatus } from './types';
 import { auth } from './firebase';
 import { signInWithPopup, GoogleAuthProvider, onAuthStateChanged, User, signOut } from 'firebase/auth';
@@ -300,6 +300,37 @@ const App: React.FC = () => {
     setProgressPercent(0);
     setProgressMessage('');
     setCurrentMeetingId(null);
+  };
+
+  const handleSyncKBDoc = async (kbDoc: KBDocument) => {
+    await saveKBDocument({ ...kbDoc, sync_status: 'pending', updated_at: Date.now() });
+    try {
+      const settings = user ? await getUserSettings(user.uid) : null;
+      if (!settings?.openaiApiKey) throw new Error('OpenAI API key not configured. Add it in Settings.');
+      const project = kbDoc.project_id ? await getProject(kbDoc.project_id) : null;
+      if (!project?.openai_vector_store_id) throw new Error('No Vector Store ID set for this project.');
+      const apiBase = (import.meta as any).env?.VITE_API_BASE_URL ?? '';
+      const res = await fetch(`${apiBase}/api/kb/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          doc_id: kbDoc.id,
+          content: kbDoc.content,
+          title: kbDoc.title,
+          topics: kbDoc.topics,
+          systems: kbDoc.systems,
+          old_file_id: kbDoc.openai_file_id,
+          vector_store_id: project.openai_vector_store_id,
+          openai_api_key: settings.openaiApiKey,
+        }),
+      });
+      const data = await res.json() as { success?: boolean; new_file_id?: string; error?: string };
+      if (!res.ok || !data.success) throw new Error(data.error || 'Sync failed');
+      await saveKBDocument({ ...kbDoc, sync_status: 'synced', openai_file_id: data.new_file_id ?? kbDoc.openai_file_id, last_synced_at: Date.now(), updated_at: Date.now() });
+    } catch (err: any) {
+      await saveKBDocument({ ...kbDoc, sync_status: 'failed', updated_at: Date.now() });
+      throw err;
+    }
   };
 
   const handleDateChange = async (newDate: number) => {
@@ -602,7 +633,9 @@ const App: React.FC = () => {
               onAskQuestion={handleAskQuestion}
               onSaveToKB={user ? handleSaveToKB : undefined}
               kbDocExists={!!kbDocForMeeting}
+              kbDoc={kbDocForMeeting ?? undefined}
               onViewKBDoc={kbDocForMeeting ? () => setViewingKBDoc(kbDocForMeeting) : undefined}
+              onSyncKBDoc={user && kbDocForMeeting ? handleSyncKBDoc : undefined}
               resultVersion={resultVersion}
               meetingDate={currentMeetingDate}
               onDateChange={user && currentMeetingId ? handleDateChange : undefined}

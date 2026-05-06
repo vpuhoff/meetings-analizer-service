@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { MeetingAnalysis } from '../types';
+import { KBDocument } from '../services/meetingService';
 import { generateMarkdownReport } from '../services/geminiService';
 
 interface DashboardProps {
@@ -10,19 +11,36 @@ interface DashboardProps {
   onAskQuestion: (question: string) => Promise<string>;
   onSaveToKB?: () => Promise<void>;
   kbDocExists?: boolean;
+  kbDoc?: KBDocument;
   onViewKBDoc?: () => void;
+  onSyncKBDoc?: (doc: KBDocument) => Promise<void>;
   resultVersion?: number;
   meetingDate?: number;
   onDateChange?: (newDate: number) => void;
 }
 
-const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanalyze, onAskQuestion, onSaveToKB, kbDocExists, onViewKBDoc, resultVersion, meetingDate, onDateChange }) => {
+const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanalyze, onAskQuestion, onSaveToKB, kbDocExists, kbDoc, onViewKBDoc, onSyncKBDoc, resultVersion, meetingDate, onDateChange }) => {
   const [feedback, setFeedback] = useState("");
   const [showTranscript, setShowTranscript] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isSavingToKB, setIsSavingToKB] = useState(false);
   const [kbSaved, setKbSaved] = useState(false);
   const [kbError, setKbError] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
+
+  const handleSync = async () => {
+    if (!kbDoc || !onSyncKBDoc) return;
+    setIsSyncing(true);
+    setSyncError(null);
+    try {
+      await onSyncKBDoc(kbDoc);
+    } catch (err: any) {
+      setSyncError(err.message || 'Sync failed');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // Format timestamp to YYYY-MM-DD for <input type="date">
   const dateValue = meetingDate
@@ -170,6 +188,25 @@ const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanal
               In KB ↗
             </button>
           )}
+          {onSyncKBDoc && kbDoc && (kbDoc.sync_status === 'out_of_sync' || kbDoc.sync_status === 'failed' || kbDoc.sync_status === 'synced') && (
+            <button
+              onClick={handleSync}
+              disabled={isSyncing}
+              title={kbDoc.sync_status === 'synced' ? 'Re-sync to Vector Store' : 'Sync to Vector Store'}
+              className="flex items-center p-2 text-sm font-medium text-slate-500 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 hover:text-emerald-600 hover:border-emerald-300 transition-colors disabled:opacity-50 disabled:cursor-wait"
+            >
+              {isSyncing ? (
+                <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                </svg>
+              ) : (
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+              )}
+            </button>
+          )}
 
           {/* Divider */}
           <div className="hidden sm:block w-px h-7 bg-slate-200" />
@@ -212,6 +249,9 @@ const Dashboard: React.FC<DashboardProps> = ({ data, language, onReset, onReanal
       </div>
       {kbError && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">{kbError}</div>
+      )}
+      {syncError && (
+        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-4 py-2">Sync error: {syncError}</div>
       )}
 
       {/* Summary Section */}
