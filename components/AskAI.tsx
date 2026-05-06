@@ -39,13 +39,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ userId, project, thread, settin
   });
 
   const handleCitationClick = useCallback(async (fileId: string) => {
-    console.log('[Citation] click — fileId:', fileId, 'annotationsMap:', annotationsMap);
     try {
       // 1. Try matching by openai_file_id (OpenAI file upload ID stored during KB sync)
       //    Must include userId filter — Firestore rules require isDocOwner()
       const q = query(collection(db, 'knowledge_base'), where('userId', '==', userId), where('openai_file_id', '==', fileId));
       const snap = await getDocs(q);
-      console.log('[Citation] query by openai_file_id — docs:', snap.size);
       if (!snap.empty) {
         setSelectedKbDoc(snap.docs[0].data() as KBDocument);
         return;
@@ -54,14 +52,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ userId, project, thread, settin
       // 2. Fallback: the annotation marker 【N:M†<kb_doc_id>.md】 embeds the KB doc ID in the filename.
       //    annotationsMap key is the raw marker text — extract doc_id from it.
       const markerEntry = Object.entries(annotationsMap).find(([, v]) => v === fileId);
-      console.log('[Citation] markerEntry:', markerEntry);
       if (markerEntry) {
         const match = markerEntry[0].match(/【[^†]*†([^】]+)\.md】/);
-        console.log('[Citation] regex match:', match?.[1]);
         if (match) {
           const kbDocId = match[1];
           const docSnap = await getDoc(doc(db, 'knowledge_base', kbDocId));
-          console.log('[Citation] getDoc by kbDocId:', kbDocId, 'exists:', docSnap.exists());
           if (docSnap.exists()) {
             setSelectedKbDoc(docSnap.data() as KBDocument);
             return;
