@@ -3,9 +3,11 @@ import React from 'react';
 interface ProcessingViewProps {
   percent: number;
   message: string;
+  filePercent?: number;
+  fileStage?: string;
 }
 
-const ProcessingView: React.FC<ProcessingViewProps> = ({ percent, message }) => {
+const ProcessingView: React.FC<ProcessingViewProps> = ({ percent, message, filePercent, fileStage }) => {
   return (
     <div className="max-w-xl mx-auto py-12 px-6 bg-white rounded-2xl shadow-lg border border-slate-100">
       <div className="flex flex-col items-center text-center space-y-6">
@@ -23,7 +25,7 @@ const ProcessingView: React.FC<ProcessingViewProps> = ({ percent, message }) => 
             Processing Meeting Intelligence
         </h3>
 
-        {/* Progress Bar */}
+        {/* Overall Progress Bar */}
         <div className="w-full space-y-3 mt-4">
           <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
             <div 
@@ -40,6 +42,26 @@ const ProcessingView: React.FC<ProcessingViewProps> = ({ percent, message }) => 
             </span>
           </div>
         </div>
+
+        {/* File-level Progress Bar */}
+        {filePercent != null && filePercent > 0 && (
+          <div className="w-full space-y-2 mt-2">
+            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+              <div 
+                className="bg-emerald-500 h-2 rounded-full transition-all duration-300 ease-out"
+                style={{ width: `${filePercent}%` }}
+              />
+            </div>
+            <div className="flex justify-between items-center">
+              <p className="text-xs text-emerald-600 font-medium">
+                {fileStage || 'Processing file...'}
+              </p>
+              <span className="text-xs font-bold text-slate-500">
+                {Math.round(filePercent)}%
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

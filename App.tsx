@@ -24,6 +24,8 @@ const App: React.FC = () => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [progressPercent, setProgressPercent] = useState<number>(0);
   const [progressMessage, setProgressMessage] = useState<string>('');
+  const [fileProgressPercent, setFileProgressPercent] = useState<number>(0);
+  const [fileProgressStage, setFileProgressStage] = useState<string>('');
   
   // Settings
   const [language, setLanguage] = useState<string>(() => {
@@ -139,6 +141,8 @@ const App: React.FC = () => {
     setStatus('processing');
     setProgressPercent(0);
     setProgressMessage('');
+    setFileProgressPercent(0);
+    setFileProgressStage('');
     setErrorMsg(null);
     setCurrentFiles(files);
     
@@ -158,7 +162,11 @@ const App: React.FC = () => {
           setProgressPercent(percent);
           setProgressMessage(message);
         },
-        useFreeTranscription
+        useFreeTranscription,
+        (pct, stage) => {
+          setFileProgressPercent(pct);
+          setFileProgressStage(stage);
+        }
       );
       
       setResult(data);
@@ -225,6 +233,8 @@ const App: React.FC = () => {
     setStatus('processing');
     setProgressPercent(0);
     setProgressMessage('');
+    setFileProgressPercent(0);
+    setFileProgressStage('');
     setErrorMsg(null);
 
     try {
@@ -242,7 +252,11 @@ const App: React.FC = () => {
               setProgressPercent(percent);
               setProgressMessage(message);
             },
-            useFreeTranscription
+            useFreeTranscription,
+            (pct, stage) => {
+              setFileProgressPercent(pct);
+              setFileProgressStage(stage);
+            }
         );
         setResult(data);
         setStatus('completed');
@@ -302,6 +316,8 @@ const App: React.FC = () => {
     setCurrentFiles([]);
     setProgressPercent(0);
     setProgressMessage('');
+    setFileProgressPercent(0);
+    setFileProgressStage('');
     setCurrentMeetingId(null);
   };
 
@@ -634,7 +650,7 @@ const App: React.FC = () => {
 
         {status === 'processing' && (
           <div className="mt-10">
-            <ProcessingView percent={progressPercent} message={progressMessage} />
+            <ProcessingView percent={progressPercent} message={progressMessage} filePercent={fileProgressPercent} fileStage={fileProgressStage} />
           </div>
         )}
 

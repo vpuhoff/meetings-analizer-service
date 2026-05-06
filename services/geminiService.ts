@@ -32,7 +32,7 @@ const readTextFile = (file: File): Promise<string> => {
 
 const FREE_TRANSCRIBE_URL = 'https://gladly-mint-dragon.ngrok-free.app';
 
-async function freeTranscribe(file: File): Promise<string> {
+async function freeTranscribe(file: File, onFileProgress?: (percent: number, stage: string) => void): Promise<string> {
   const formData = new FormData();
   formData.append('file', file);
 
@@ -45,12 +45,15 @@ async function freeTranscribe(file: File): Promise<string> {
 
   // Poll for result
   while (true) {
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 1500));
     const statusRes = await fetch(`${FREE_TRANSCRIBE_URL}/status/${task_id}`);
-    const data = await statusRes.json() as { status: string; result: string | null };
+    const data = await statusRes.json() as { status: string; result: string | null; progress?: number; stage?: string };
     if (data.status === 'completed') return data.result || '';
     if (data.status === 'failed') throw new Error(data.result || 'Free transcription failed');
-    // pending / processing — continue polling
+    // Report file-level progress
+    if (onFileProgress && data.progress != null) {
+      onFileProgress(data.progress, data.stage || data.status);
+    }
   }
 }
 
@@ -61,7 +64,8 @@ export const analyzeMeeting = async (
   teamContext?: string, 
   feedback?: string, 
   onProgress?: (percent: number, message: string) => void,
-  useFreeTranscription?: boolean
+  useFreeTranscription?: boolean,
+  onFileProgress?: (percent: number, stage: string) => void
 ): Promise<MeetingAnalysis> => {
   try {
     // Separate audio and text files
@@ -102,7 +106,7 @@ export const analyzeMeeting = async (
       if (useFreeTranscription) {
         // Free transcription service — no chunking needed, service handles long audio
         reportProgress(`Transcribing (free) ${fileIndex + 1}/${audioFiles.length}...`);
-        const transcriptText = await freeTranscribe(audioFile);
+        const transcriptText = await freeTranscribe(audioFile, onFileProgress);
         // Always create segments for display in Dashboard
         const segments = parseTranscriptText(transcriptText);
         if (segments.length > 0) {
