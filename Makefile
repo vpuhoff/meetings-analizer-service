@@ -47,6 +47,7 @@ deploy-frontend: build
 
 deploy-firestore:
 	npx firebase deploy --only firestore:rules --project $(PROJECT_ID)
+	npx firebase deploy --only firestore:indexes  --project $(PROJECT_ID)
 
 deploy-all: deploy-worker deploy-frontend deploy-firestore
 	@echo "All components deployed successfully!"
