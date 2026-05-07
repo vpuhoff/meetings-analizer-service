@@ -10,6 +10,14 @@
       { "name": "CHAT_HISTORY", "class_name": "ChatHistory" }
     ]
   },
+  "queues": {
+    "producers": [
+      { "binding": "TASKS", "queue": "telegram-tasks" }
+    ],
+    "consumers": [
+      { "queue": "telegram-tasks", "max_batch_size": 10 }
+    ]
+  },
   "migrations": [
     { "tag": "v1", "new_sqlite_classes": ["ChatHistory"] }
   ]

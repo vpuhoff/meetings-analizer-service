@@ -1009,7 +1009,7 @@ async function handleTelegram(request: Request, env: any, ctx: any): Promise<Res
   // Always return 200 quickly — Telegram expects it
   const response = new Response('ok', { status: 200 });
 
-  // Process asynchronously
+  // Process asynchronously - just push to queue
   ctx.waitUntil((async () => {
     try {
       const msg = body.message;
@@ -1018,193 +1018,253 @@ async function handleTelegram(request: Request, env: any, ctx: any): Promise<Res
         return;
       }
 
-      const chatId: number = msg.chat.id;
-      const chatType: string = msg.chat.type; // 'private' | 'group' | 'supergroup'
-      const text: string = msg.text;
-      const fromName: string = msg.from?.first_name || 'User';
-      const msgId: number = msg.message_id;
-      const replyToMsg = msg.reply_to_message;
-      const botUsername: string = env.BOT_USERNAME;
-      const botToken: string = env.BOT_TOKEN;
+      console.log('[Telegram] Queueing message:', { chatId: msg.chat.id, text: msg.text.substring(0, 100) });
 
-      // Check if this is a /start or /clear command
-      const isCommand = text.startsWith('/start') || text.startsWith('/clear');
-      if (isCommand) {
-        const id = env.CHAT_HISTORY.idFromName(`chat:${chatId}`);
-        const stub = env.CHAT_HISTORY.get(id);
-        await stub.fetch(new Request('https://do/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear' }) }));
-        await sendMessage(botToken, chatId, '🧹 История чата очищена.');
-        return;
-      }
-
-      // Determine if bot should respond
-      const isPrivate = chatType === 'private';
-      const isMentioned = botUsername && text.includes(`@${botUsername}`);
-      const isReplyToBot = replyToMsg?.from?.username === botUsername;
-      const shouldRespond = isPrivate || isMentioned || isReplyToBot;
-
-      // Debug logging
-      console.log('[Telegram] Debug:', {
-        chatType,
-        botUsername,
-        text,
-        isPrivate,
-        isMentioned,
-        isReplyToBot,
-        shouldRespond,
-        replyToMsg: replyToMsg?.from?.username
+      // Send task to queue for processing
+      await env.TASKS.send({
+        chatId: msg.chat.id,
+        chatType: msg.chat.type,
+        text: msg.text,
+        fromName: msg.from?.first_name || 'User',
+        msgId: msg.message_id,
+        replyToMsg: msg.reply_to_message,
+        timestamp: Date.now()
       });
 
-      // Clean text: strip @username mention
-      let cleanText = text;
-      if (botUsername) {
-        cleanText = cleanText.replace(new RegExp(`@${botUsername}`, 'g'), '').trim();
-      }
-
-      // In groups, prefix with sender name
-      if (!isPrivate) {
-        cleanText = `[${fromName}]: ${cleanText}`;
-      }
-
-      // Get DO stub
-      const id = env.CHAT_HISTORY.idFromName(`chat:${chatId}`);
-      const stub = env.CHAT_HISTORY.get(id);
-
-      // Push user message to history
-      await stub.fetch(new Request('https://do/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'push', role: 'user', content: cleanText }),
-      }));
-
-      // If bot shouldn't respond, just store the message and return
-      if (!shouldRespond) return;
-
-      // Show typing indicator
-      await sendChatAction(botToken, chatId, 'typing');
-
-      // Get full history
-      const historyRes = await stub.fetch(new Request('https://do/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'get' }),
-      }));
-      const historyData = await historyRes.json() as { messages: { role: string; content: string }[] };
-
-      // Build input for Responses API
-      const input = historyData.messages.map(m => ({
-        role: m.role === 'system' ? 'developer' as const : m.role as 'user' | 'assistant',
-        content: m.content,
-      }));
-
-      // Determine if file search is needed based on keywords
-      const searchKeywords = [
-        'найди', 'найдите', 'найти', 'ищи', 'ищите', 'поищи', 'поищите', 
-        'поиск', 'поискать', 'искать', 'посмотри', 'посмотрите', 'глянь', 
-        'гляньте', 'чекни', 'чекните', 'проверь', 'проверьте', 'проверить',
-        'узнай', 'узнайте', 'уточни', 'уточните', 'вспомни', 'вспомните',
-        'база знаний', 'бз', 'чертог', 'астрал', 'документ', 'доки', 'доках', 'доков',
-        'инфа', 'информаци', 'информацию'
-      ];
-      const needsSearch = searchKeywords.some(keyword => 
-        cleanText.toLowerCase().includes(keyword.toLowerCase())
-      );
-
-      // Call Responses API
-      const today = new Date().toLocaleDateString('ru-RU', { 
-        day: 'numeric', 
-        month: 'long', 
-        year: 'numeric',
-        weekday: 'long'
-      });
-      const systemPromptWithDate = `${TELEGRAM_SYSTEM_PROMPT}\n\nТекущая дата: ${today}.`;
-      
-      const responsePayload: Record<string, unknown> = {
-        model: 'gpt-5-mini',
-        input,
-        instructions: systemPromptWithDate,
-        stream: true,
-      };
-
-      // Only add file_search if keywords match and VECTOR_STORE_ID is set
-      if (needsSearch && env.VECTOR_STORE_ID) {
-        responsePayload.tools = [{ type: 'file_search', vector_store_ids: [env.VECTOR_STORE_ID] }];
-      }
-
-      const runRes = await fetch('https://api.openai.com/v1/responses', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${env.OPENAI_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(responsePayload),
-      });
-
-      if (!runRes.ok) {
-        const errText = await runRes.text();
-        console.error('[Telegram] Responses API error:', errText);
-        await sendMessage(botToken, chatId, '⚠️ Ошибка при генерации ответа. Попробуйте позже.');
-        return;
-      }
-
-      // Read SSE stream to collect full response text
-      const reader = runRes.body!.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-      let fullText = '';
-      let currentEventType = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            currentEventType = line.slice(7).trim();
-            continue;
-          }
-          if (!line.startsWith('data: ')) continue;
-          const raw = line.slice(6).trim();
-          if (raw === '[DONE]') break;
-
-          try {
-            const evt = JSON.parse(raw);
-            if (currentEventType === 'response.output_text.delta') {
-              fullText += evt.delta ?? '';
-            }
-          } catch {
-            // skip non-JSON
-          }
-        }
-      }
-
-      if (!fullText) {
-        await sendMessage(botToken, chatId, '⚠️ Пустой ответ от модели.');
-        return;
-      }
-
-      // Push assistant message to history
-      await stub.fetch(new Request('https://do/', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'push', role: 'assistant', content: fullText }),
-      }));
-
-      // Send reply in Telegram
-      await sendMessage(botToken, chatId, fullText, msgId);
+      console.log('[Telegram] Task queued successfully');
 
     } catch (err: any) {
-      console.error('[Telegram] handler error:', err);
+      console.error('[Telegram] queue error:', err);
     }
   })());
 
   return response;
 }
 
-// Main worker with routing
+// ── Queue handler for long-running tasks ───────────────────────────────
+
+export default {
+  async fetch(request: Request, env: any, ctx: any): Promise<Response> {
+    return handleRequest(request, env, ctx);
+  },
+
+  async queue(batch: any, env: any): Promise<void> {
+    console.log(`[Queue] Processing batch of ${batch.messages.length} messages`);
+
+    for (const msg of batch.messages) {
+      try {
+        const { chatId, chatType, text, fromName, msgId, replyToMsg } = msg.body;
+        console.log(`[Queue] Processing message from chat ${chatId}`);
+
+        const botUsername: string = env.BOT_USERNAME;
+        const botToken: string = env.BOT_TOKEN;
+
+        // Check if this is a /start or /clear command
+        const isCommand = text.startsWith('/start') || text.startsWith('/clear');
+        if (isCommand) {
+          const id = env.CHAT_HISTORY.idFromName(`chat:${chatId}`);
+          const stub = env.CHAT_HISTORY.get(id);
+          await stub.fetch(new Request('https://do/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear' }) }));
+          await sendMessage(botToken, chatId, '🧹 История чата очищена.');
+          await msg.ack();
+          continue;
+        }
+
+        // Determine if bot should respond
+        const isPrivate = chatType === 'private';
+        const isMentioned = botUsername && text.includes(`@${botUsername}`);
+        const isReplyToBot = replyToMsg?.from?.username === botUsername;
+        const shouldRespond = isPrivate || isMentioned || isReplyToBot;
+
+        if (!shouldRespond) {
+          await msg.ack();
+          continue;
+        }
+
+        // Clean text: strip @username mention
+        let cleanText = text;
+        if (botUsername) {
+          cleanText = cleanText.replace(new RegExp(`@${botUsername}`, 'g'), '').trim();
+        }
+
+        // In groups, prefix with sender name
+        if (!isPrivate) {
+          cleanText = `[${fromName}]: ${cleanText}`;
+        }
+
+        // Get DO stub
+        const id = env.CHAT_HISTORY.idFromName(`chat:${chatId}`);
+        const stub = env.CHAT_HISTORY.get(id);
+
+        // Push user message to history
+        await stub.fetch(new Request('https://do/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'push', role: 'user', content: cleanText }),
+        }));
+
+        // Send typing action
+        await sendChatAction(botToken, chatId, 'typing');
+
+        // Fetch full history from DO
+        const historyRes = await stub.fetch(new Request('https://do/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'get' }),
+        }));
+        const historyData = await historyRes.json() as { messages: { role: string; content: string }[] };
+
+        // Build input for Responses API
+        const input = historyData.messages.map(m => ({
+          role: m.role === 'system' ? 'developer' as const : m.role as 'user' | 'assistant',
+          content: m.content,
+        }));
+
+        // Determine if file search is needed based on keywords
+        const searchKeywords = [
+          'найди', 'найдите', 'найти', 'ищи', 'ищите', 'поищи', 'поищите', 
+          'поиск', 'поискать', 'искать', 'посмотри', 'посмотрите', 'глянь', 
+          'гляньте', 'чекни', 'чекните', 'проверь', 'проверьте', 'проверить',
+          'узнай', 'узнайте', 'уточни', 'уточните', 'вспомни', 'вспомните',
+          'база знаний', 'бз', 'чертог', 'астрал', 'документ', 'доки', 'доках', 'доков',
+          'инфа', 'информаци', 'информацию'
+        ];
+        const needsSearch = searchKeywords.some(keyword => 
+          cleanText.toLowerCase().includes(keyword.toLowerCase())
+        );
+
+        // Call Responses API
+        const today = new Date().toLocaleDateString('ru-RU', { 
+          day: 'numeric', 
+          month: 'long', 
+          year: 'numeric',
+          weekday: 'long'
+        });
+        const systemPromptWithDate = `${TELEGRAM_SYSTEM_PROMPT}\n\nТекущая дата: ${today}.`;
+        
+        const responsePayload: Record<string, unknown> = {
+          model: 'gpt-5-mini',
+          input,
+          instructions: systemPromptWithDate,
+          stream: true,
+        };
+
+        // Only add file_search if keywords match and VECTOR_STORE_ID is set
+        if (needsSearch && env.VECTOR_STORE_ID) {
+          responsePayload.tools = [{ 
+            type: 'file_search', 
+            vector_store_ids: [env.VECTOR_STORE_ID],
+            max_num_results: 3
+          }];
+        }
+
+        console.log(`[Queue] Calling OpenAI API for chat ${chatId}...`);
+
+        const runRes = await fetch('https://api.openai.com/v1/responses', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${env.OPENAI_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(responsePayload),
+        });
+
+        if (!runRes.ok) {
+          const errText = await runRes.text();
+          console.error(`[Queue] Responses API error:`, errText);
+          await sendMessage(botToken, chatId, '⚠️ Ошибка при генерации ответа. Попробуйте позже.');
+          await msg.ack();
+          continue;
+        }
+
+        // Read SSE stream to collect full response text
+        const reader = runRes.body!.getReader();
+        const decoder = new TextDecoder();
+        let fullText = '';
+        let buffer = '';
+        let responseCompleted = false;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          const chunk = decoder.decode(value, { stream: true });
+          buffer += chunk;
+          
+          // Process complete lines
+          let lineEnd;
+          while ((lineEnd = buffer.indexOf('\n')) !== -1) {
+            const line = buffer.slice(0, lineEnd);
+            buffer = buffer.slice(lineEnd + 1);
+            
+            if (line.startsWith('data: ')) {
+              const data = line.slice(6);
+              if (data === '[DONE]') continue;
+              try {
+                const parsed = JSON.parse(data);
+                
+                // Handle different event types from OpenAI Responses API
+                if (parsed.type === 'response.completed') {
+                  // Extract text from the completed response
+                  if (parsed.response?.output) {
+                    for (const output of parsed.response.output) {
+                      if (output.type === 'message' && output.content) {
+                        for (const content of output.content) {
+                          if (content.type === 'output_text' && content.text) {
+                            fullText += content.text;
+                          }
+                        }
+                      }
+                    }
+                  }
+                  responseCompleted = true;
+                } else if (parsed.type === 'response.output_text.delta' && parsed.delta) {
+                  // For streaming text deltas - this is the actual format
+                  fullText += parsed.delta;
+                } else if (parsed.type === 'content_block_delta' && parsed.delta?.text) {
+                  // For streaming text deltas
+                  fullText += parsed.delta.text;
+                }
+              } catch (e) {
+                console.log(`[Queue] Failed to parse SSE:`, data.substring(0, 100));
+              }
+            }
+          }
+        }
+
+        console.log(`[Queue] Response completed:`, responseCompleted);
+        console.log(`[Queue] Extracted text length:`, fullText.length);
+
+        if (!fullText.trim()) {
+          console.error(`[Queue] Empty response from OpenAI for chat ${chatId}`);
+          await sendMessage(botToken, chatId, '⚠️ Пустой ответ от модели. Попробуйте переформулировать.');
+          await msg.ack();
+          continue;
+        }
+
+        // Push assistant message to history
+        await stub.fetch(new Request('https://do/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'push', role: 'assistant', content: fullText }),
+        }));
+
+        // Send reply in Telegram
+        await sendMessage(botToken, chatId, fullText, msgId);
+        console.log(`[Queue] Response sent successfully to chat ${chatId}`);
+
+        await msg.ack();
+
+      } catch (err: any) {
+        console.error(`[Queue] Error processing message:`, err);
+        await msg.ack();
+      }
+    }
+  }
+};
+
+// ── Main worker with routing ────────────────────────────────────────────
+
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
@@ -1214,9 +1274,9 @@ const CORS_HEADERS: Record<string, string> = {
 
 function withCors(response: Response): Response {
   const newHeaders = new Headers(response.headers);
-  for (const [key, value] of Object.entries(CORS_HEADERS)) {
-    newHeaders.set(key, value);
-  }
+  Object.entries(CORS_HEADERS).forEach(([key, value]) => {
+    if (!newHeaders.has(key)) newHeaders.set(key, value);
+  });
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,
@@ -1224,41 +1284,42 @@ function withCors(response: Response): Response {
   });
 }
 
-export default {
-  async fetch(request: Request, env: any, ctx: any): Promise<Response> {
-    const url = new URL(request.url);
-    const path = url.pathname;
+async function handleRequest(request: Request, env: any, ctx: any): Promise<Response> {
+  const url = new URL(request.url);
+  const path = url.pathname;
 
-    // Handle CORS preflight
-    if (request.method === "OPTIONS") {
-      return new Response(null, { headers: CORS_HEADERS });
-    }
+  // Handle CORS preflight
+  if (request.method === 'OPTIONS') {
+    return new Response(null, {
+      status: 200,
+      headers: CORS_HEADERS,
+    });
+  }
 
-    // Routing
-    if (path === "/api/analyze") {
-      return withCors(await analyze(request, env));
-    } else if (path === "/api/transcribe") {
-      return withCors(await transcribe(request, env));
-    } else if (path === "/api/question") {
-      return withCors(await question(request, env));
-    } else if (path === "/api/markdown") {
-      return withCors(await markdown(request, env));
-    } else if (path === "/api/kb/sync") {
-      return withCors(await kbSync(request, env));
-    } else if (path === "/api/kb/unsync") {
-      return withCors(await kbUnsync(request, env));
-    } else if (path === "/api/assistant") {
-      return withCors(await assistant(request, env));
-    } else if (path === "/api/assistant/messages") {
-      return withCors(await assistantMessages(request));
-    } else if (path === "/api/assistant-new") {
-      return withCors(await assistantNew(request, env));
-    } else if (path === "/api/assistant-new/messages") {
-      return withCors(await assistantNewMessages(request));
-    } else if (path === "/api/telegram") {
-      return await handleTelegram(request, env, ctx);
-    } else {
-      return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } });
-    }
-  },
-};
+  // API Routes
+  if (path === "/api/analyze") {
+    return withCors(await analyze(request, env));
+  } else if (path === "/api/transcribe") {
+    return withCors(await transcribe(request, env));
+  } else if (path === "/api/question") {
+    return withCors(await question(request, env));
+  } else if (path === "/api/markdown") {
+    return withCors(await markdown(request, env));
+  } else if (path === "/api/kb/sync") {
+    return withCors(await kbSync(request, env));
+  } else if (path === "/api/kb/unsync") {
+    return withCors(await kbUnsync(request, env));
+  } else if (path === "/api/assistant") {
+    return withCors(await assistant(request, env));
+  } else if (path === "/api/assistant/messages") {
+    return withCors(await assistantMessages(request));
+  } else if (path === "/api/assistant-new") {
+    return withCors(await assistantNew(request, env));
+  } else if (path === "/api/assistant-new/messages") {
+    return withCors(await assistantNewMessages(request));
+  } else if (path === "/api/telegram") {
+    return await handleTelegram(request, env, ctx);
+  } else {
+    return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } });
+  }
+}
