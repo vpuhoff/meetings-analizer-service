@@ -891,7 +891,7 @@ export class ChatHistory {
 
   async fetch(request: Request): Promise<Response> {
     await this.init();
-    const { action, role, content } = await request.json() as { action: string; role?: string; content?: string };
+    const { action, role, content, prompt } = await request.json() as { action: string; role?: string; content?: string; prompt?: string };
 
     // Get current date in YYYY-MM-DD format
     const today = new Date().toISOString().split('T')[0];
@@ -1021,12 +1021,28 @@ export class ChatHistory {
       
       this.ctx.storage.sql.exec(`DELETE FROM msgs`);
       
+      // Also clear custom prompt
+      await this.ctx.storage.delete('custom_prompt');
+      console.log(`[ChatHistory] Custom prompt cleared`);
+      
       // Verify after clear
       const afterCount = this.ctx.storage.sql.exec(`SELECT COUNT(*) as count FROM msgs`);
       const afterRows = Array.from(afterCount)[0] as any;
       console.log(`[ChatHistory] Messages after clear: ${afterRows.count}`);
       
       return new Response(JSON.stringify({ ok: true, cleared: beforeRows.count }), { headers: { 'Content-Type': 'application/json' } });
+    }
+
+    if (action === 'set_prompt' && prompt) {
+      // Store custom prompt in storage
+      await this.ctx.storage.put('custom_prompt', prompt);
+      console.log(`[ChatHistory] Custom prompt set for this chat, length: ${prompt.length}`);
+      return new Response(JSON.stringify({ ok: true }), { headers: { 'Content-Type': 'application/json' } });
+    }
+
+    if (action === 'get_prompt') {
+      const customPrompt = await this.ctx.storage.get('custom_prompt');
+      return new Response(JSON.stringify({ ok: true, prompt: customPrompt || null }), { headers: { 'Content-Type': 'application/json' } });
     }
 
     return new Response(JSON.stringify({ error: 'Unknown action' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
@@ -1174,17 +1190,32 @@ export default {
         const botUsername: string = env.BOT_USERNAME;
         const botToken: string = env.BOT_TOKEN;
 
-        // Check if this is a /start or /clear command (handle /cmd@bot_username format in groups)
+        // Check if this is a command (handle /cmd@bot_username format in groups)
         const cmdText = botUsername ? text.replace(`@${botUsername}`, '').trim() : text;
-        const isCommand = cmdText === '/start' || cmdText === '/clear';
-        if (isCommand) {
+        const id = env.CHAT_HISTORY.idFromName(`chat:${chatId}`);
+        const stub = env.CHAT_HISTORY.get(id);
+
+        // Handle /clear command
+        if (cmdText === '/start' || cmdText === '/clear') {
           console.log(`[Queue] Processing command: ${cmdText} for chat ${chatId}`);
-          const id = env.CHAT_HISTORY.idFromName(`chat:${chatId}`);
-          const stub = env.CHAT_HISTORY.get(id);
           const clearResult = await stub.fetch(new Request('https://do/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'clear' }) }));
           const clearData = await clearResult.json();
           console.log(`[Queue] Clear result:`, clearData);
           await sendMessage(botToken, chatId, '🧹 История чата очищена.');
+          await msg.ack();
+          continue;
+        }
+
+        // Handle /prompt command
+        if (cmdText.startsWith('/prompt ')) {
+          const newPrompt = cmdText.slice(8).trim();
+          if (newPrompt) {
+            console.log(`[Queue] Setting custom prompt for chat ${chatId}`);
+            await stub.fetch(new Request('https://do/', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'set_prompt', prompt: newPrompt }) }));
+            await sendMessage(botToken, chatId, '✅ Промпт обновлен. Новый контекст активен.');
+          } else {
+            await sendMessage(botToken, chatId, '⚠️ Укажи текст промпта после команды: /prompt <текст>');
+          }
           await msg.ack();
           continue;
         }
@@ -1210,10 +1241,6 @@ export default {
         if (!isPrivate) {
           cleanText = `[${fromName}]: ${cleanText}`;
         }
-
-        // Get DO stub
-        const id = env.CHAT_HISTORY.idFromName(`chat:${chatId}`);
-        const stub = env.CHAT_HISTORY.get(id);
 
         // Push user message to history
         await stub.fetch(new Request('https://do/', {
@@ -1252,6 +1279,15 @@ export default {
           cleanText.toLowerCase().includes(keyword.toLowerCase())
         );
 
+        // Fetch custom prompt if set
+        const promptRes = await stub.fetch(new Request('https://do/', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'get_prompt' }),
+        }));
+        const promptData = await promptRes.json() as { ok: boolean; prompt: string | null };
+        const customPrompt = promptData.ok ? promptData.prompt : null;
+
         // Call Responses API
         const today = new Date().toLocaleDateString('ru-RU', { 
           day: 'numeric', 
@@ -1259,7 +1295,14 @@ export default {
           year: 'numeric',
           weekday: 'long'
         });
-        const systemPromptWithDate = `${TELEGRAM_SYSTEM_PROMPT}\n\nТекущая дата: ${today}.`;
+        
+        // Use custom prompt if set, otherwise use default
+        const systemPrompt = customPrompt || TELEGRAM_SYSTEM_PROMPT;
+        const systemPromptWithDate = `${systemPrompt}\n\nТекущая дата: ${today}.`;
+        
+        console.log(`[Queue] Custom prompt from DO: ${customPrompt ? 'YES (length: ' + customPrompt.length + ')' : 'NO'}`);
+        console.log(`[Queue] Using ${customPrompt ? 'CUSTOM' : 'DEFAULT'} prompt for chat ${chatId}`);
+        console.log(`[Queue] System prompt preview: ${systemPromptWithDate.substring(0, 100)}...`);
         
         const responsePayload: Record<string, unknown> = {
           model: 'gpt-5-mini',
