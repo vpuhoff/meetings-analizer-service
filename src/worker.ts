@@ -696,12 +696,154 @@ async function assistantMessages(request: Request) {
   }
 }
 
+// Assistant New: streaming chat with OpenAI Responses API + Conversations API
+async function assistantNew(request: Request, env: any) {
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
+  }
+
+  try {
+    const body = await request.json() as {
+      message: string;
+      conversationId?: string | null;
+      model: string;
+      openai_api_key: string;
+      vectorStoreId?: string | null;
+      instructions?: string | null;
+    };
+
+    const { message, conversationId, model, openai_api_key, vectorStoreId, instructions } = body;
+
+    if (!openai_api_key) {
+      return new Response(JSON.stringify({ error: 'openai_api_key is required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+
+    const oaiBase = 'https://api.openai.com/v1';
+    const oaiHeaders: Record<string, string> = {
+      'Authorization': `Bearer ${openai_api_key}`,
+      'Content-Type': 'application/json',
+    };
+
+    // 1. Create conversation if needed
+    let convId = conversationId;
+    if (!convId) {
+      const convRes = await fetch(`${oaiBase}/conversations`, {
+        method: 'POST',
+        headers: oaiHeaders,
+        body: JSON.stringify({
+          metadata: { source: 'meeting-intel' },
+          items: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: message }] }],
+        }),
+      });
+      if (!convRes.ok) throw new Error(`Failed to create conversation: ${await convRes.text()}`);
+      const conv = await convRes.json() as { id: string };
+      convId = conv.id;
+    }
+
+    // 2. Build the Responses API request
+    const responsePayload: Record<string, unknown> = {
+      model,
+      conversation: convId,
+      stream: true,
+      store: true,
+    };
+
+    // If conversation already existed, pass user message as input
+    // (new conversation already has the first message in its items)
+    if (conversationId) {
+      responsePayload.input = [{ role: 'user', content: message }];
+    }
+
+    if (instructions) {
+      responsePayload.instructions = instructions;
+    }
+
+    if (vectorStoreId) {
+      responsePayload.tools = [{ type: 'file_search', vector_store_ids: [vectorStoreId] }];
+    }
+
+    // 3. Create streaming response
+    const runRes = await fetch(`${oaiBase}/responses`, {
+      method: 'POST',
+      headers: oaiHeaders,
+      body: JSON.stringify(responsePayload),
+    });
+    if (!runRes.ok) throw new Error(`Failed to start response: ${await runRes.text()}`);
+
+    // 4. Pipe SSE body — add X-Conversation-Id header
+    return new Response(runRes.body, {
+      status: 200,
+      headers: {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        'X-Conversation-Id': convId,
+      },
+    });
+
+  } catch (err: any) {
+    return new Response(JSON.stringify({ error: err.message || 'Assistant new request failed' }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
+
+// Load conversation message history from Conversations API
+async function assistantNewMessages(request: Request) {
+  if (request.method !== 'POST') {
+    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { 'Content-Type': 'application/json' } });
+  }
+  try {
+    const body = await request.json() as {
+      conversationId: string;
+      openai_api_key: string;
+    };
+    const { conversationId, openai_api_key } = body;
+    if (!conversationId || !openai_api_key) {
+      return new Response(JSON.stringify({ error: 'conversationId and openai_api_key are required' }), { status: 400, headers: { 'Content-Type': 'application/json' } });
+    }
+    const res = await fetch(`https://api.openai.com/v1/conversations/${conversationId}/items?limit=100`, {
+      headers: {
+        'Authorization': `Bearer ${openai_api_key}`,
+      },
+    });
+    if (!res.ok) throw new Error(`OpenAI error: ${await res.text()}`);
+    const data = await res.json() as { data: any[] };
+    // Normalise to { id, role, content, annotations } shape
+    const messages = data.data
+      .filter((item: any) => item.type === 'message' && (item.role === 'user' || item.role === 'assistant'))
+      .map((item: any) => {
+        // Extract text from content parts
+        let text = '';
+        const annotations: any[] = [];
+        if (Array.isArray(item.content)) {
+          for (const part of item.content) {
+            if (part.type === 'input_text' && part.text) {
+              text += part.text;
+            } else if (part.type === 'output_text' && part.text) {
+              text += part.text;
+              if (part.annotations?.length) {
+                annotations.push(...part.annotations);
+              }
+            }
+          }
+        }
+        return {
+          id: item.id,
+          role: item.role as 'user' | 'assistant',
+          content: text,
+          annotations,
+        };
+      });
+    return new Response(JSON.stringify({ messages }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  } catch (err: any) {
+    return new Response(JSON.stringify({ error: err.message }), { status: 500, headers: { 'Content-Type': 'application/json' } });
+  }
+}
+
 // Main worker with routing
 const CORS_HEADERS: Record<string, string> = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type",
-  "Access-Control-Expose-Headers": "X-Thread-Id",
+  "Access-Control-Expose-Headers": "X-Thread-Id, X-Conversation-Id",
 };
 
 function withCors(response: Response): Response {
@@ -743,6 +885,10 @@ export default {
       return withCors(await assistant(request, env));
     } else if (path === "/api/assistant/messages") {
       return withCors(await assistantMessages(request));
+    } else if (path === "/api/assistant-new") {
+      return withCors(await assistantNew(request, env));
+    } else if (path === "/api/assistant-new/messages") {
+      return withCors(await assistantNewMessages(request));
     } else {
       return new Response(JSON.stringify({ error: "Not found" }), { status: 404, headers: { ...CORS_HEADERS, "Content-Type": "application/json" } });
     }

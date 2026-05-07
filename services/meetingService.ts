@@ -269,6 +269,8 @@ export interface ChatThread {
   userId: string;
   project_id: string;
   openai_thread_id: string;
+  openai_conversation_id?: string;
+  api_version?: 'responses_v1';
   title: string;
   created_at: number;
   updated_at: number;
