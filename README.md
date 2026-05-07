@@ -194,6 +194,23 @@ After first deploy: add your domain to **Firebase Console → Authentication →
 - Always use `wrangler secret put GEMINI_API_KEY`.
 - Verify after deploy: `wrangler secret list`.
 
+#### Telegram Bot Secrets
+
+For the Telegram bot integration, set these secrets:
+
+```bash
+# Required for Telegram bot functionality
+wrangler secret put BOT_TOKEN          # Telegram bot token from @BotFather
+wrangler secret put BOT_USERNAME       # Bot username without @
+wrangler secret put OPENAI_KEY         # OpenAI API key for Responses API
+wrangler secret put VECTOR_STORE_ID    # Optional: Vector Store ID for file search
+```
+
+After setting secrets, register the webhook:
+```bash
+curl "https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<worker-url>/api/telegram"
+```
+
 ### @cloudflare/vite-plugin
 
 - Generates its own `wrangler.json` in `dist/` with `"vars": {}`, which can override secrets.
