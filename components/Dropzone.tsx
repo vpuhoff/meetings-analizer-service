@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 
 interface DropzoneProps {
   onFilesSelect: (files: File[]) => void;
@@ -35,6 +35,23 @@ const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelect, disabled }) => {
       processFiles(e.target.files);
     }
   };
+
+  // Handle Ctrl+V paste — read clipboard text and process as .txt file
+  const handlePaste = useCallback(async (e: ClipboardEvent) => {
+    if (disabled) return;
+    // Only handle text from clipboard (skip if files are pasted — those go through drop)
+    const text = e.clipboardData?.getData('text/plain');
+    if (!text || !text.trim()) return;
+    e.preventDefault();
+    const file = new File([text], 'pasted-transcript.txt', { type: 'text/plain' });
+    setFileCount(1);
+    onFilesSelect([file]);
+  }, [disabled, onFilesSelect]);
+
+  useEffect(() => {
+    document.addEventListener('paste', handlePaste);
+    return () => document.removeEventListener('paste', handlePaste);
+  }, [handlePaste]);
 
   const processFiles = (fileList: FileList) => {
      const files = Array.from(fileList);
@@ -95,7 +112,7 @@ const Dropzone: React.FC<DropzoneProps> = ({ onFilesSelect, disabled }) => {
             {isDragOver ? "Drop files here" : (fileCount > 0 ? `${fileCount} file(s) selected` : "Upload Audio or Text Transcript")}
           </p>
           <p className="text-sm text-slate-500 mt-1">
-            Audio (MP3, WAV) or Text (TXT, MD, SRT)
+            Audio (MP3, WAV) or Text (TXT, MD, SRT) · <span className="text-brand-500">Ctrl+V</span> to paste transcript
           </p>
         </div>
       </div>
