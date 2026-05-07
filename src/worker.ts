@@ -1087,7 +1087,12 @@ async function tg(token: string, method: string, body: any): Promise<any> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  return res.json();
+  const data = await res.json();
+  if (!res.ok || !data.ok) {
+    console.error(`[Telegram] API error for ${method}:`, data);
+    throw new Error(`Telegram API error: ${data.description || res.statusText}`);
+  }
+  return data;
 }
 
 async function sendChatAction(token: string, chatId: number, action: string): Promise<void> {
@@ -1111,7 +1116,7 @@ async function sendMessage(token: string, chatId: number, text: string, replyTo?
     remaining = remaining.slice(splitAt).trimStart();
   }
   for (const chunk of chunks) {
-    const body: any = { chat_id: chatId, text: chunk, parse_mode: 'Markdown' };
+    const body: any = { chat_id: chatId, text: chunk };
     if (replyTo) body.reply_to_message_id = replyTo;
     await tg(token, 'sendMessage', body);
   }
@@ -1401,8 +1406,13 @@ export default {
         }));
 
         // Send reply in Telegram
-        await sendMessage(botToken, chatId, fullText, msgId);
-        console.log(`[Queue] Response sent successfully to chat ${chatId}`);
+        try {
+          await sendMessage(botToken, chatId, fullText, msgId);
+          console.log(`[Queue] Response sent successfully to chat ${chatId}`);
+        } catch (sendErr: any) {
+          console.error(`[Queue] Failed to send message to Telegram:`, sendErr.message);
+          throw sendErr;
+        }
 
         await msg.ack();
 
