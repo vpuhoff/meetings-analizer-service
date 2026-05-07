@@ -4,5 +4,13 @@
   "main": "src/worker.ts",
   "compatibility_date": "2026-04-14",
   "compatibility_flags": ["nodejs_compat"],
-  "observability": { "enabled": true }
+  "observability": { "enabled": true },
+  "durable_objects": {
+    "bindings": [
+      { "name": "CHAT_HISTORY", "class_name": "ChatHistory" }
+    ]
+  },
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["ChatHistory"] }
+  ]
 }
