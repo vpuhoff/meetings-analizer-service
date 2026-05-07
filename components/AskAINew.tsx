@@ -9,7 +9,6 @@ import {
 } from '../services/meetingService';
 import { useAssistantChatNew } from '../hooks/useAssistantChatNew';
 import ChatMessageNew from './ChatMessageNew';
-import { CitationAnnotation, AnnotationsMapNew } from '../utils/formatCitationsNew';
 
 // ── Props ───────────────────────────────────────────────────────────
 interface AskAINewProps {
@@ -38,8 +37,6 @@ const ChatWindowNew: React.FC<ChatWindowNewProps> = ({ userId, project, thread, 
   const [selectedKbDoc, setSelectedKbDoc] = useState<KBDocument | null>(null);
   const [citationNotFound, setCitationNotFound] = useState<string | null>(null);
   const [chatModel, setChatModel] = useState<string>(CHAT_MODELS[1].id);
-  const [currentAnnotations, setCurrentAnnotations] = useState<CitationAnnotation[]>([]);
-
   const { messages, annotationsMap, input, setInput, isLoading, error, sendMessage } = useAssistantChatNew({
     userId,
     project,
@@ -48,17 +45,6 @@ const ChatWindowNew: React.FC<ChatWindowNewProps> = ({ userId, project, thread, 
     onThreadCreated,
     model: chatModel,
   });
-
-  // Collect annotations from the map for the current message rendering
-  useEffect(() => {
-    const all: CitationAnnotation[] = [];
-    for (const [fileId, entries] of Object.entries(annotationsMap)) {
-      for (const entry of entries) {
-        all.push({ type: 'file_citation', index: entry.index, file_id: fileId, filename: entry.filename });
-      }
-    }
-    setCurrentAnnotations(all);
-  }, [annotationsMap]);
 
   const handleCitationClick = useCallback(async (fileId: string) => {
     try {
@@ -70,22 +56,8 @@ const ChatWindowNew: React.FC<ChatWindowNewProps> = ({ userId, project, thread, 
         return;
       }
 
-      // Fallback: try to find by filename from annotationsMap
-      const entries = annotationsMap[fileId];
-      if (entries?.length) {
-        const filename = entries[0].filename;
-        // Try matching by title containing the filename
-        const q2 = query(collection(db, 'knowledge_base'), where('userId', '==', userId));
-        const snap2 = await getDocs(q2);
-        const match = snap2.docs.find(d => {
-          const data = d.data() as KBDocument;
-          return filename.includes(data.title) || data.title.includes(filename.replace(/\.\w+$/, ''));
-        });
-        if (match) {
-          setSelectedKbDoc(match.data() as KBDocument);
-          return;
-        }
-      }
+      // No filename fallback — file_id is the only key we have
+      // The KB lookup by openai_file_id above is the primary path
     } catch (err) {
       console.error('[Citation New] lookup failed:', err);
     }
@@ -134,7 +106,6 @@ const ChatWindowNew: React.FC<ChatWindowNewProps> = ({ userId, project, thread, 
           <ChatMessageNew
             key={msg.id}
             message={msg}
-            annotations={currentAnnotations}
             annotationsMap={annotationsMap}
             onCitationClick={handleCitationClick}
           />

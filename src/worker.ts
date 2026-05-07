@@ -732,7 +732,6 @@ async function assistantNew(request: Request, env: any) {
         headers: oaiHeaders,
         body: JSON.stringify({
           metadata: { source: 'meeting-intel' },
-          items: [{ type: 'message', role: 'user', content: [{ type: 'input_text', text: message }] }],
         }),
       });
       if (!convRes.ok) throw new Error(`Failed to create conversation: ${await convRes.text()}`);
@@ -740,19 +739,14 @@ async function assistantNew(request: Request, env: any) {
       convId = conv.id;
     }
 
-    // 2. Build the Responses API request
+    // 2. Build the Responses API request — input is always required
     const responsePayload: Record<string, unknown> = {
       model,
+      input: [{ role: 'user', content: message }],
       conversation: convId,
       stream: true,
       store: true,
     };
-
-    // If conversation already existed, pass user message as input
-    // (new conversation already has the first message in its items)
-    if (conversationId) {
-      responsePayload.input = [{ role: 'user', content: message }];
-    }
 
     if (instructions) {
       responsePayload.instructions = instructions;

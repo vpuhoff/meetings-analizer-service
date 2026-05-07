@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { ChatThread, UserSettings, saveChatThread } from '../services/meetingService';
 import { Project } from '../types';
-import { CitationAnnotation, buildAnnotationsMap, AnnotationsMapNew } from '../utils/formatCitationsNew';
+import { CitationAnnotation, buildMarkerMap, formatCitationsNew } from '../utils/formatCitationsNew';
 
 export interface ChatMessageNew {
   id: string;
@@ -21,7 +21,7 @@ interface UseAssistantChatNewOptions {
 
 interface UseAssistantChatNewReturn {
   messages: ChatMessageNew[];
-  annotationsMap: AnnotationsMapNew;
+  annotationsMap: Record<string, string>; // marker text → file_id
   input: string;
   setInput: (v: string) => void;
   isLoading: boolean;
@@ -40,7 +40,7 @@ export function useAssistantChatNew({
   model,
 }: UseAssistantChatNewOptions): UseAssistantChatNewReturn {
   const [messages, setMessages] = useState<ChatMessageNew[]>([]);
-  const [annotationsMap, setAnnotationsMap] = useState<AnnotationsMapNew>({});
+  const [annotationsMap, setAnnotationsMap] = useState<Record<string, string>>({});
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,11 +72,11 @@ export function useAssistantChatNew({
         if (!data.messages) return;
         setMessages(data.messages.map(m => ({ id: m.id, role: m.role, content: m.content })));
         // Restore annotationsMap from historical annotations
-        const allAnnotations: CitationAnnotation[] = [];
+        const merged: Record<string, string> = {};
         for (const m of data.messages) {
-          if (m.annotations?.length) allAnnotations.push(...m.annotations);
+          if (m.annotations?.length) Object.assign(merged, buildMarkerMap(m.content, m.annotations));
         }
-        if (allAnnotations.length > 0) setAnnotationsMap(buildAnnotationsMap(allAnnotations));
+        if (Object.keys(merged).length > 0) setAnnotationsMap(merged);
       })
       .catch(() => { /* silently ignore history load errors */ });
   }, [thread?.id, settings?.openaiApiKey]);
@@ -179,14 +179,15 @@ export function useAssistantChatNew({
               }
             }
 
-            // Text done — carries final annotations
+            // Text done — carries final annotations with index + file_id + filename
             if (currentEventType === 'response.output_text.done') {
               const annotations: CitationAnnotation[] = evt.annotations ?? [];
-              if (annotations.length > 0) {
-                setAnnotationsMap(prev => {
-                  const newMap = buildAnnotationsMap(annotations);
-                  return { ...prev, ...newMap };
-                });
+              const fullText: string = evt.text ?? '';
+              if (annotations.length > 0 && fullText) {
+                const markerMap = buildMarkerMap(fullText, annotations);
+                if (Object.keys(markerMap).length > 0) {
+                  setAnnotationsMap(prev => ({ ...prev, ...markerMap }));
+                }
               }
             }
 
@@ -196,11 +197,11 @@ export function useAssistantChatNew({
               for (const item of output) {
                 if (item.type === 'message' && item.content) {
                   for (const part of item.content) {
-                    if (part.annotations?.length) {
-                      setAnnotationsMap(prev => {
-                        const newMap = buildAnnotationsMap(part.annotations);
-                        return { ...prev, ...newMap };
-                      });
+                    if (part.annotations?.length && part.text) {
+                      const markerMap = buildMarkerMap(part.text, part.annotations);
+                      if (Object.keys(markerMap).length > 0) {
+                        setAnnotationsMap(prev => ({ ...prev, ...markerMap }));
+                      }
                     }
                   }
                 }

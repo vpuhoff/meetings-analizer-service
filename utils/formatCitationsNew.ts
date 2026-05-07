@@ -1,12 +1,12 @@
 /**
  * Citation formatting for the Responses API (new format).
  *
- * Unlike the Assistants API which uses text markers like 【6:0†file.md】,
- * the Responses API returns annotations with an `index` field indicating
- * the character position in the output text, plus `file_id` and `filename`.
+ * The Responses API returns annotations with { index, file_id, filename }.
+ * The model may embed citations in two ways:
+ *   1. 【…】 markers (e.g. 【9:a73e160f-c48c-422c-a128-99e6aadc342e.md】)
+ *   2. Bare filenames inline (e.g. "9df984cf-9c77-491b-a73b-b70f4bc0fdfe.md")
  *
- * annotationsMap format: file_id → { index: number, filename: string }[]
- * (array per file_id because the same file can be cited multiple times)
+ * This module replaces both with clickable [[N]](#file-{file_id}) links.
  */
 
 export interface CitationAnnotation {
@@ -16,66 +16,84 @@ export interface CitationAnnotation {
   filename: string;
 }
 
-export type AnnotationsMapNew = Record<string, { index: number; filename: string }[]>;
+// Regex for 【…】 markers
+const BRACKET_MARKER_RE = /【[^】]*】/g;
+
+// Regex for bare UUID.md filenames inline (e.g. a73e160f-c48c-422c-a128-99e6aadc342e.md)
+const INLINE_MD_RE = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.md\b/gi;
 
 /**
- * Build an AnnotationsMapNew from a raw annotations array.
- * Each file_id maps to an array of { index, filename } entries.
+ * Build a marker→file_id map from annotations by matching filenames.
+ *
+ * For each annotation, we look for its filename inside 【…】 markers
+ * in the text. If found, the whole marker maps to the file_id.
+ * If not found via brackets, we also map the bare filename → file_id.
  */
-export function buildAnnotationsMap(annotations: CitationAnnotation[]): AnnotationsMapNew {
-  const map: AnnotationsMapNew = {};
+export function buildMarkerMap(
+  text: string,
+  annotations: CitationAnnotation[],
+): Record<string, string> {
+  const map: Record<string, string> = {};
   for (const ann of annotations) {
-    if (ann.type === 'file_citation' && ann.file_id) {
-      if (!map[ann.file_id]) map[ann.file_id] = [];
-      map[ann.file_id].push({ index: ann.index, filename: ann.filename });
+    if (ann.type !== 'file_citation' || !ann.file_id) continue;
+    const filename = ann.filename || '';
+
+    // Try to find a 【…】 marker containing this filename
+    const bracketMatch = text.match(new RegExp(`【[^】]*${escapeRegex(filename)}[^】]*】`));
+    if (bracketMatch) {
+      map[bracketMatch[0]] = ann.file_id;
+    }
+
+    // Also map the bare filename → file_id for inline references
+    if (filename) {
+      map[filename] = ann.file_id;
     }
   }
   return map;
 }
 
 /**
- * Insert citation markers into the text based on annotation indices.
+ * Replace all citation markers (both 【…】 and inline UUID.md) with
+ * clickable [[N]](#file-{file_id}) links.
  *
- * For each annotation, inserts ` [[N]](#file-{file_id})` at the annotation's
- * `index` position. Insertions are done from end to start so that earlier
- * indices remain valid.
- *
- * Sequential numbers are assigned per unique file_id so the same source
- * always gets the same badge number within a message.
+ * Sequential numbers are assigned per unique file_id.
  */
-export function formatCitationsByIndex(
+export function formatCitationsNew(
   text: string,
-  annotations: CitationAnnotation[],
+  markerMap: Record<string, string>,
 ): string {
-  if (!annotations.length) return text;
+  if (!Object.keys(markerMap).length) return text;
 
-  // Assign sequential numbers per unique file_id
   const fileIdToIndex = new Map<string, number>();
   let counter = 0;
-  for (const ann of annotations) {
-    if (!fileIdToIndex.has(ann.file_id)) {
-      fileIdToIndex.set(ann.file_id, ++counter);
+
+  function getBadge(fileId: string): string {
+    if (!fileIdToIndex.has(fileId)) {
+      fileIdToIndex.set(fileId, ++counter);
     }
+    const idx = fileIdToIndex.get(fileId)!;
+    return ` [[${idx}]](#file-${fileId})`;
   }
 
-  // Build insertion list: { position, marker }
-  const insertions: { position: number; marker: string }[] = [];
-  for (const ann of annotations) {
-    const idx = fileIdToIndex.get(ann.file_id)!;
-    insertions.push({
-      position: ann.index,
-      marker: ` [[${idx}]](#file-${ann.file_id})`,
-    });
-  }
+  // Step 1: Replace 【…】 markers
+  let result = text.replace(BRACKET_MARKER_RE, (marker) => {
+    const fileId = markerMap[marker];
+    if (fileId) return getBadge(fileId);
+    // Marker not resolved — remove it silently
+    return '';
+  });
 
-  // Sort descending by position so insertions don't shift earlier indices
-  insertions.sort((a, b) => b.position - a.position);
-
-  let result = text;
-  for (const { position, marker } of insertions) {
-    const pos = Math.min(position, result.length);
-    result = result.slice(0, pos) + marker + result.slice(pos);
-  }
+  // Step 2: Replace bare UUID.md filenames
+  result = result.replace(INLINE_MD_RE, (filename) => {
+    const fileId = markerMap[filename];
+    if (fileId) return getBadge(fileId);
+    // Not a known citation — leave as-is
+    return filename;
+  });
 
   return result;
+}
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }

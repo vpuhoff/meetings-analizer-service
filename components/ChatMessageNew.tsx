@@ -1,16 +1,15 @@
 import React from 'react';
 import ReactMarkdown from 'react-markdown';
-import { formatCitationsByIndex, CitationAnnotation, AnnotationsMapNew } from '../utils/formatCitationsNew';
+import { formatCitationsNew } from '../utils/formatCitationsNew';
 import { ChatMessageNew as ChatMessageNewType } from '../hooks/useAssistantChatNew';
 
 interface ChatMessageNewProps {
   message: ChatMessageNewType;
-  annotations: CitationAnnotation[];
-  annotationsMap: AnnotationsMapNew;
+  annotationsMap: Record<string, string>; // marker text → file_id
   onCitationClick: (fileId: string) => void;
 }
 
-const ChatMessageNew: React.FC<ChatMessageNewProps> = ({ message, annotations, annotationsMap, onCitationClick }) => {
+const ChatMessageNew: React.FC<ChatMessageNewProps> = ({ message, annotationsMap, onCitationClick }) => {
   if (message.role === 'user') {
     return (
       <div className="flex justify-end">
@@ -22,16 +21,7 @@ const ChatMessageNew: React.FC<ChatMessageNewProps> = ({ message, annotations, a
   }
 
   // Assistant: format citations then render markdown
-  const processed = formatCitationsByIndex(message.content, annotations);
-
-  // Build a set of unique file_ids for citation badges
-  const fileIdToIndex = new Map<string, number>();
-  let counter = 0;
-  for (const ann of annotations) {
-    if (!fileIdToIndex.has(ann.file_id)) {
-      fileIdToIndex.set(ann.file_id, ++counter);
-    }
-  }
+  const processed = formatCitationsNew(message.content, annotationsMap);
 
   return (
     <div className="flex justify-start">
@@ -51,7 +41,7 @@ const ChatMessageNew: React.FC<ChatMessageNewProps> = ({ message, annotations, a
                             onCitationClick(fileId);
                           }}
                           className="inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1 text-[10px] font-bold rounded-full bg-brand-100 text-brand-700 hover:bg-brand-200 transition-colors border border-brand-300 cursor-pointer"
-                          title={`Source: ${annotationsMap[fileId]?.[0]?.filename ?? fileId}`}
+                          title={`Source: ${fileId}`}
                         >
                           {children}
                         </button>
