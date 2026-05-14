@@ -153,7 +153,23 @@ export async function deleteMeeting(meetingId: string) {
 export async function saveProject(project: Partial<Project> & { id: string }) {
   const path = `projects/${project.id}`;
   try {
-    await setDoc(doc(db, 'projects', project.id), project, { merge: true });
+    const uid = auth.currentUser?.uid;
+    console.log('[saveProject] auth.uid:', uid);
+    console.log('[saveProject] data:', JSON.stringify(project));
+    const d = project as any;
+    const dateRe = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.*Z?$/;
+    console.log('[saveProject] checks:', {
+      hasRequiredFields: ['userId','name','context','createdAt','updatedAt'].every(f => f in d),
+      userIdMatchesAuth: d.userId === uid,
+      nameValid: typeof d.name === 'string' && d.name.length > 0 && d.name.length <= 200,
+      contextValid: typeof d.context === 'string' && d.context.length > 0 && d.context.length <= 10000,
+      contextLength: d.context?.length,
+      createdAtValid: dateRe.test(d.createdAt),
+      updatedAtValid: dateRe.test(d.updatedAt),
+      createdAt: d.createdAt,
+      updatedAt: d.updatedAt,
+    });
+    await setDoc(doc(db, 'projects', project.id), project);
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, path);
   }

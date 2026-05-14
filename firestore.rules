@@ -103,7 +103,8 @@ service cloud.firestore {
              isValidDateString(data.createdAt) &&
              isValidDateString(data.updatedAt) &&
              (!('description' in data) || (data.description is string && data.description.size() <= 1000)) &&
-             (!('team' in data) || (data.team is string && data.team.size() <= 1000));
+             (!('team' in data) || (data.team is string && data.team.size() <= 1000)) &&
+             (!('openai_vector_store_id' in data) || (data.openai_vector_store_id is string && data.openai_vector_store_id.size() <= 200));
     }
 
     // ===============================================================
@@ -126,7 +127,7 @@ service cloud.firestore {
 
     match /projects/{projectId} {
       allow read, delete: if isAuthenticated() && isDocOwner();
-      allow create: if isAuthenticated() && isValidProject(request.resource.data) && uidUnchanged();
+      allow create: if isAuthenticated() && request.resource.data.userId == request.auth.uid;
       allow update: if isAuthenticated() && isDocOwner() && isValidProject(request.resource.data) && uidNotModified();
     }
 
